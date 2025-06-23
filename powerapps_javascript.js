@@ -729,7 +729,7 @@ function setCurrentShiftDateTime(executionContext) {
  *
  * @param {object} executionContext - The execution context from Power Apps form event
  */
-function setPsudoName(executionContext) {
+function setPseudoName(executionContext) {
     console.log("🔁 setPsudoName triggered");
 
     var formContext = executionContext.getFormContext();
