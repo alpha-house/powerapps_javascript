@@ -832,9 +832,6 @@ function fetchTableField(executionContext, lookupFieldSchema, targetFieldSchema,
 }
 
 
-// code block separator
-
-
 //reload feild in order to triger down stream events
 function reloadLookupField(executionContext, lookupFieldSchema) {
     console.log(`[reloadLookupField] Triggered for lookup field: ${lookupFieldSchema}`);
@@ -878,10 +875,17 @@ function reloadLookupField(executionContext, lookupFieldSchema) {
 }
 
 
-// code block separator
 
 
-//Limit the number of options that can be selected for choice qustion
+/**
+ * enforceMaxSelections
+ * ----------------------------------------
+ * Limits the number of selected options in a multi-select choice field.
+ *
+ * @param {object} executionContext - The execution context passed from Power Apps.
+ * @param {string} fieldName - The logical name of the multi-select field to enforce limits on.
+ * @param {number} maxAllowed - The maximum number of allowed selections.
+ */
 function enforceMaxSelections(executionContext, fieldName, maxAllowed) {
     var formContext = executionContext.getFormContext();
     var field = formContext.getAttribute(fieldName);
@@ -906,7 +910,6 @@ function enforceMaxSelections(executionContext, fieldName, maxAllowed) {
 }
 
 
-// code block separator
 
 
 function toggleWebResourceVisibility(executionContext) {
@@ -1024,68 +1027,6 @@ function updateAppointmentConcatenation(executionContext) {
 // code block separator
 
 
-
-function setServiceRequestDate(executionContext) {
-    var formContext = executionContext.getFormContext();
-    
-    console.log("setServiceRequestDate triggered on save.");
-
-    var admissionId = formContext.data.entity.getId();
-    if (!admissionId) {
-        console.warn("Admission ID not yet available (unsaved record).");
-        return;
-    }
-    admissionId = admissionId.replace("{", "").replace("}", "");
-    console.log("Admission ID:", admissionId);
-
-    var assessmentQuery = "?$select=cp_assessmentid,createdon" +
-                          "&$filter=_cp_admission_value eq " + admissionId +
-                          "&$orderby=createdon asc&$top=1";
-
-    Xrm.WebApi.retrieveMultipleRecords("cp_assessment", assessmentQuery).then(
-        function(assessmentResult) {
-            console.log("Assessment Results:", assessmentResult);
-
-            if (assessmentResult.entities.length === 0) {
-                console.warn("No Assessments found for this Admission.");
-                return;
-            }
-
-            var assessmentId = assessmentResult.entities[0].cp_assessmentid;
-
-            var checkinQuery = "?$select=cp_checkindate" +
-                               "&$filter=_cp_assessment_value eq " + assessmentId +
-                               "&$orderby=cp_checkindate asc&$top=1";
-
-            Xrm.WebApi.retrieveMultipleRecords("cp_checkin", checkinQuery).then(
-                function(checkinResult) {
-                    console.log("Check-in Results:", checkinResult);
-
-                    if (checkinResult.entities.length === 0) {
-                        console.warn("No Check-ins found for this Assessment.");
-                        return;
-                    }
-
-                    var firstCheckinDate = new Date(checkinResult.entities[0].cp_checkindate);
-                    console.log("First Check-in Date:", firstCheckinDate);
-
-                    formContext.getAttribute("cp_servicerequestdate").setValue(firstCheckinDate);
-                    formContext.data.entity.save(); // ensure date is saved immediately
-                    console.log("Service Request Date set and Admission saved.");
-                },
-                function(error) {
-                    console.error("Check-in retrieval error:", error.message);
-                }
-            );
-        },
-        function(error) {
-            console.error("Assessment retrieval error:", error.message);
-        }
-    );
-}
-
-
-// code block separator
 
 
 function copyAdmissionDateTime(executionContext) {
