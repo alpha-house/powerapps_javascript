@@ -718,198 +718,60 @@ function setCurrentShiftDateTime(executionContext) {
 
 
 
-// code block separator
-
-
-
-
-function setPseudoNameIfPHN(executionContext) {
-    console.log("ÃÂ°ÃÂÃÂÃÂ setPseudoName triggered!");
-
-    var formContext = executionContext.getFormContext();$select
-
-    // Get Client Field (Lookup)
-    var clientField = formContext.getAttribute("cp_client");
-    if (!clientField) {
-        console.error("ÃÂ¢ÃÂÃÂ Client field (cp_client) not found!");
-        return;
-    }
-
-    var clientValue = clientField.getValue();
-    if (!Array.isArray(clientValue) || clientValue.length === 0) {
-        console.warn("ÃÂ¢ÃÂÃÂ  No client selected.");
-        return;
-    }
-
-    var clientId = clientValue[0].id.replace(/[{}]/g, ""); // Extract the Client ID 
-    console.log("ÃÂ°ÃÂÃÂÃÂ Client ID:", clientId);
-
-    // Get Pseudo Name Field
-    var pseudoField = formContext.getAttribute("cp_pseudoname");
-    if (!pseudoField) {
-        console.error("ÃÂ¢ÃÂÃÂ Pseudo Name field (cp_pseudoname) not found!");
-        return;
-    }
-
-    // Fetch Client Record from Dataverse to check PHN (cp_ahcnumber)
-    Xrm.WebApi.retrieveRecord("contact", clientId, "?$select=cp_ahcnumber").then(
-        function (result) {
-            console.log("ÃÂ°ÃÂÃÂÃÂ¢ Client PHN (cp_ahcnumber):", result.cp_ahcnumber);
-
-            // If PHN exists, clear Pseudo Name field
-            if (result.cp_ahcnumber) {
-                console.warn("ÃÂ¢ÃÂÃÂ PHN exists, clearing Pseudo Name.");
-                pseudoField.setValue("");
-                pseudoField.fireOnChange();
-                return;
-            }
-
-            console.log("ÃÂ¢ÃÂÃÂ PHN is empty, generating Pseudo Name.");
-
-            // Process Client Name (Remove Spaces & Convert to Lowercase)
-            var clientName = clientValue[0].name.replace(/\s+/g, "").toLowerCase();
-            console.log("ÃÂ°ÃÂÃÂÃÂ¢ Processed Client Name:", clientName);
-
-            // Extract the last 3 characters
-            var lastThreeLetters = clientName.length >= 3 ? clientName.slice(-3) : clientName;
-
-            console.log("ÃÂ¢ÃÂÃÂ Final Pseudo Name (No Spaces, Lowercase):", lastThreeLetters);
-
-            // Set the value and trigger UI update
-            pseudoField.setValue(lastThreeLetters);
-            pseudoField.fireOnChange();
-        },
-        function (error) {
-            console.error("ÃÂ¢ÃÂÃÂ Error retrieving Client PHN:", error.message);
-        }
-    );
-}
-
-
-
-// code block separator
-
-
-///MDRATE data, field settings. Set fields based on detox addmission requiermeents
-
-//Set the postal code to requiered, and 
-function setPostalCodeToRequired(executionContext) {
-    console.log("ÃÂ°ÃÂÃÂÃÂ setPostalCodeToRequired triggered!");
-
-    var formContext = executionContext.getFormContext();
-    if (!formContext) {
-        console.error("ÃÂ¢ÃÂÃÂ Form context not found!");
-        return;
-    }
-
-    var programField = formContext.getAttribute("cp_program");
-
-    if (!programField) {
-        console.error("ÃÂ¢ÃÂÃÂ Program field (cp_program) not found!");
-        return;
-    }
-
-    var programValue = programField.getValue(); // Get selected value (array)
-    console.log("ÃÂ°ÃÂÃÂÃÂ¢ Raw Program Value:", programValue);
-
-    // ÃÂ¢ÃÂÃÂ Extract program name safely from lookup array
-    var programName = programValue && programValue.length > 0 ? programValue[0].name : null;
-    console.log("ÃÂ°ÃÂÃÂÃÂ¢ Extracted Program Name:", programName);
-
-    if (programName && programName.toLowerCase() === "detox") {
-        console.log("ÃÂ¢ÃÂÃÂ Program is Detox. Setting Postal Code as required...");
-
-        var postalCodeField = formContext.getAttribute("cp_postalcode");
-        var postalCodeControl = formContext.getControl("cp_postalcode");
-
-        if (postalCodeField) {
-            postalCodeField.setRequiredLevel("required");
-            console.log("ÃÂ¢ÃÂÃÂ Postal Code field set to Required.");
-        } else {
-            console.warn("ÃÂ¢ÃÂÃÂ  Postal Code field (cp_postalcode) not found.");
-        }
-
-        if (postalCodeControl) {
-            postalCodeControl.setLabel("Postal Code" +
-                " ÃÂ¢ÃÂÃÂ¢ Enter ÃÂ¢ÃÂÃÂA9A 9A9ÃÂ¢ÃÂÃÂ if missing or unknown - " +
-                " ÃÂ¢ÃÂÃÂ¢ Enter ÃÂ¢ÃÂÃÂA1A 1A1ÃÂ¢ÃÂÃÂ if the client has no fixed address");
-            console.log("ÃÂ¢ÃÂÃÂ Postal Code field label updated.");
-        } else {
-            console.warn("ÃÂ¢ÃÂÃÂ  Postal Code control not found.");
-        }
-    } else {
-        console.log("ÃÂ¢ÃÂÃÂ Program is NOT Detox. Resetting Postal Code field properties...");
-
-        var postalCodeField = formContext.getAttribute("cp_postalcode");
-        var postalCodeControl = formContext.getControl("cp_postalcode");
-
-        if (postalCodeField) {
-            postalCodeField.setRequiredLevel("none"); // Remove required status
-            console.log("ÃÂ¢ÃÂÃÂ Postal Code field set to Optional.");
-        } else {
-            console.warn("ÃÂ¢ÃÂÃÂ  Postal Code field (cp_postalcode) not found.");
-        }
-
-        if (postalCodeControl) {
-            postalCodeControl.setLabel("Postal Code"); // Reset label
-            console.log("ÃÂ¢ÃÂÃÂ Postal Code field label reset.");
-        } else {
-            console.warn("ÃÂ¢ÃÂÃÂ  Postal Code control not found.");
-        }
-    }
-}
-
-
-
-// code block separator
-
-
-
-//Copy MDRATE fields that exist other tables =======
-
+/**
+ * setPsudoName
+ * Description:
+ * This function auto-generates a "pseudo name" for a client when selected on a form.
+ * It extracts the client's name from the lookup, removes spaces, converts to lowercase,
+ * and stores the last three characters in the `cp_pseudoname` field.
+ *
+ * Triggered on: OnChange of the `cp_client` lookup field.
+ *
+ * @param {object} executionContext - The execution context from Power Apps form event
+ */
 function setPsudoName(executionContext) {
-    console.log("ÃÂ°ÃÂÃÂÃÂ setPseudoName triggered!");
+    console.log("🔁 setPsudoName triggered");
 
     var formContext = executionContext.getFormContext();
 
     // Get Client Field (Lookup)
     var clientField = formContext.getAttribute("cp_client");
     if (!clientField) {
-        console.error("ÃÂ¢ÃÂÃÂ Client field (cp_client) not found!");
+        console.error("❌ Client field (cp_client) not found");
         return;
     }
 
     var clientValue = clientField.getValue();
     if (!Array.isArray(clientValue) || clientValue.length === 0) {
-        console.warn("ÃÂ¢ÃÂÃÂ  No client selected.");
+        console.warn("⚠️ No client selected");
         return;
     }
 
-    var clientId = clientValue[0].id.replace(/[{}]/g, ""); // Extract the Client ID
-    console.log("ÃÂ°ÃÂÃÂÃÂ Client ID:", clientId);
+    var clientId = clientValue[0].id.replace(/[{}]/g, "");
+    console.log("🔎 Client ID:", clientId);
 
     // Get Pseudo Name Field
     var pseudoField = formContext.getAttribute("cp_pseudoname");
     if (!pseudoField) {
-        console.error("ÃÂ¢ÃÂÃÂ Pseudo Name field (cp_pseudoname) not found!");
+        console.error("❌ Pseudo Name field (cp_pseudoname) not found");
         return;
     }
 
-    console.log("ÃÂ¢ÃÂÃÂ Generating Pseudo Name for all clients (PHN check removed).");
+    console.log("✅ Generating Pseudo Name (PHN check removed)");
 
     // Process Client Name (Remove Spaces & Convert to Lowercase)
     var clientName = clientValue[0].name.replace(/\s+/g, "").toLowerCase();
-    console.log("ÃÂ°ÃÂÃÂÃÂ¢ Processed Client Name:", clientName);
+    console.log("📦 Processed Client Name:", clientName);
 
     // Extract the last 3 characters
     var lastThreeLetters = clientName.length >= 3 ? clientName.slice(-3) : clientName;
-
-    console.log("ÃÂ¢ÃÂÃÂ Final Pseudo Name (No Spaces, Lowercase):", lastThreeLetters);
+    console.log("🎯 Final Pseudo Name:", lastThreeLetters);
 
     // Set the value and trigger UI update
     pseudoField.setValue(lastThreeLetters);
     pseudoField.fireOnChange();
 }
+
 
 
 
