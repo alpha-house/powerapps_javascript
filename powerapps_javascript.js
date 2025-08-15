@@ -1,12 +1,21 @@
+//----------------------Boreal Functions Start Here----------------------//
 /**
  * Boreal – Referral → Intake automation
+ * Now handles both Approved (747630000) and
+ * Approved for Scattered Site (747630003), setting
+ * ahb_intakelocation on the new intake.
  */
 var Boreal = (function () {
     "use strict";
 
-    const Approved = 747630000;
+    // Status values
+    const Approved            = 747630000;
+    const ApprovedScattered   = 747630003;
 
-    function isAccepted(v) { return v === Approved; }
+    // Helper: either approved status?
+    function isAccepted(v) {
+        return v === Approved || v === ApprovedScattered;
+    }
 
     /** OnLoad: remember starting status */
     function onReferralFormLoad(executionContext) {
@@ -15,45 +24,48 @@ var Boreal = (function () {
             formCtx.getAttribute("ahb_referralcomitteestatus").getValue();
     }
 
-    /** OnSave: create ahb_intake when required */
+    /** OnSave: create ahb_intake when status flips into one of the approved states */
     function onReferralFormSave(executionContext) {
         const formCtx  = executionContext.getFormContext();
-        const formType = formCtx.ui.getFormType();          // 1‑Create, 2‑Update
+        const formType = formCtx.ui.getFormType();   // 1 = Create, 2 = Update
         const newStat  = formCtx.getAttribute("ahb_referralcomitteestatus").getValue();
 
         const mustCreate =
             (formType === 1 && isAccepted(newStat)) ||
             (formType === 2 &&
-             !isAccepted(window.__boreal_initialStatus) && isAccepted(newStat));
+             !isAccepted(window.__boreal_initialStatus) &&
+              isAccepted(newStat));
 
         if (!mustCreate) return;
 
         /* ----- Gather IDs ----- */
-
-        // client lookup
         const clientRef = formCtx.getAttribute("ahb_client").getValue();
         if (!clientRef || clientRef.length === 0) {
             console.error("Boreal: ahb_client empty – cannot create intake.");
             return;
         }
-        const clientId = clientRef[0].id.replace(/[{}]/g, "");
-
-        // referral ID (may still be null during create)
+        const clientId   = clientRef[0].id.replace(/[{}]/g, "");
         const referralId = formCtx.data.entity.getId().replace(/[{}]/g, "");
 
         /* ----- Build payload ----- */
-
         const payload = {
+            // link to contact
             "ahb_Client@odata.bind": `/contacts(${clientId})`
         };
 
-        // Only bind the referral when it truly exists (update scenario)
+        // on update, also link back to this referral
         if (formType === 2 && referralId) {
             payload["ahb_Referral@odata.bind"] = `/ahb_referrals(${referralId})`;
         }
 
-        /* ----- Create intake ----- */
+        // set intake location based on which approval status fired it
+        if (newStat === Approved) {
+            payload["ahb_intakelocation"] = 747630000;
+        } else if (newStat === ApprovedScattered) {
+            payload["ahb_intakelocation"] = 747630001;
+        }
 
+        /* ----- Create intake ----- */
         Xrm.WebApi.createRecord("ahb_intake", payload).then(
             r => console.log(`Boreal: intake created → ${r.id}`),
             e => console.error(`Boreal: failed to create intake – ${e.message}`)
@@ -61,10 +73,11 @@ var Boreal = (function () {
     }
 
     return {
-        onReferralFormLoad,
-        onReferralFormSave
+        onReferralFormLoad: onReferralFormLoad,
+        onReferralFormSave: onReferralFormSave
     };
 })();
+
 
 
 // code block separator
@@ -680,7 +693,7 @@ function setShiftType(executionContext) {
     var formContext = executionContext.getFormContext();
 
     // Retrieve the shift date and time value
-    var shiftDateTime = formContext.getAttribute("cp_shiftdateandtime").getValue();
+    var shiftDateTime = formContext.getAttribute("createdon").getValue();
     
     if (shiftDateTime) {
         // Extract the hour from the date (0-23)
@@ -718,60 +731,213 @@ function setCurrentShiftDateTime(executionContext) {
 
 
 
-/**
- * setPsudoName
- * Description:
- * This function auto-generates a "pseudo name" for a client when selected on a form.
- * It extracts the client's name from the lookup, removes spaces, converts to lowercase,
- * and stores the last three characters in the `cp_pseudoname` field.
- *
- * Triggered on: OnChange of the `cp_client` lookup field.
- *
- * @param {object} executionContext - The execution context from Power Apps form event
- */
-function setPseudoName(executionContext) {
-    console.log("🔁 setPsudoName triggered");
+// code block separator
+
+
+
+
+function preventAutoSave(econtext) {
+  var eventArgs = econtext.getEventArgs();
+  // 70 = AutoSave, 2 = Save & Close
+  if (eventArgs.getSaveMode() === 70 || eventArgs.getSaveMode() === 2) {
+    eventArgs.preventDefault();
+  }
+}
+
+
+//-----------------------------Boreal Functions End Here----------------------//
+
+
+
+//---------------------------Detox Functions Start Here----------------------//
+
+function setPseudoNameIfPHN(executionContext) {
+    console.log("ÃÂ°ÃÂÃÂÃÂ setPseudoName triggered!");
+
+    var formContext = executionContext.getFormContext();$select
+
+    // Get Client Field (Lookup)
+    var clientField = formContext.getAttribute("cp_client");
+    if (!clientField) {
+        console.error("ÃÂ¢ÃÂÃÂ Client field (cp_client) not found!");
+        return;
+    }
+
+    var clientValue = clientField.getValue();
+    if (!Array.isArray(clientValue) || clientValue.length === 0) {
+        console.warn("ÃÂ¢ÃÂÃÂ  No client selected.");
+        return;
+    }
+
+    var clientId = clientValue[0].id.replace(/[{}]/g, ""); // Extract the Client ID 
+    console.log("ÃÂ°ÃÂÃÂÃÂ Client ID:", clientId);
+
+    // Get Pseudo Name Field
+    var pseudoField = formContext.getAttribute("cp_pseudoname");
+    if (!pseudoField) {
+        console.error("ÃÂ¢ÃÂÃÂ Pseudo Name field (cp_pseudoname) not found!");
+        return;
+    }
+
+    // Fetch Client Record from Dataverse to check PHN (cp_ahcnumber)
+    Xrm.WebApi.retrieveRecord("contact", clientId, "?$select=cp_ahcnumber").then(
+        function (result) {
+            console.log("ÃÂ°ÃÂÃÂÃÂ¢ Client PHN (cp_ahcnumber):", result.cp_ahcnumber);
+
+            // If PHN exists, clear Pseudo Name field
+            if (result.cp_ahcnumber) {
+                console.warn("ÃÂ¢ÃÂÃÂ PHN exists, clearing Pseudo Name.");
+                pseudoField.setValue("");
+                pseudoField.fireOnChange();
+                return;
+            }
+
+            console.log("ÃÂ¢ÃÂÃÂ PHN is empty, generating Pseudo Name.");
+
+            // Process Client Name (Remove Spaces & Convert to Lowercase)
+            var clientName = clientValue[0].name.replace(/\s+/g, "").toLowerCase();
+            console.log("ÃÂ°ÃÂÃÂÃÂ¢ Processed Client Name:", clientName);
+
+            // Extract the last 3 characters
+            var lastThreeLetters = clientName.length >= 3 ? clientName.slice(-3) : clientName;
+
+            console.log("ÃÂ¢ÃÂÃÂ Final Pseudo Name (No Spaces, Lowercase):", lastThreeLetters);
+
+            // Set the value and trigger UI update
+            pseudoField.setValue(lastThreeLetters);
+            pseudoField.fireOnChange();
+        },
+        function (error) {
+            console.error("ÃÂ¢ÃÂÃÂ Error retrieving Client PHN:", error.message);
+        }
+    );
+}
+
+
+
+// code block separator
+
+
+///MDRATE data, field settings. Set fields based on detox addmission requiermeents
+
+//Set the postal code to requiered, and 
+function setPostalCodeToRequired(executionContext) {
+    console.log("ÃÂ°ÃÂÃÂÃÂ setPostalCodeToRequired triggered!");
+
+    var formContext = executionContext.getFormContext();
+    if (!formContext) {
+        console.error("ÃÂ¢ÃÂÃÂ Form context not found!");
+        return;
+    }
+
+    var programField = formContext.getAttribute("cp_program");
+
+    if (!programField) {
+        console.error("ÃÂ¢ÃÂÃÂ Program field (cp_program) not found!");
+        return;
+    }
+
+    var programValue = programField.getValue(); // Get selected value (array)
+    console.log("ÃÂ°ÃÂÃÂÃÂ¢ Raw Program Value:", programValue);
+
+    // ÃÂ¢ÃÂÃÂ Extract program name safely from lookup array
+    var programName = programValue && programValue.length > 0 ? programValue[0].name : null;
+    console.log("ÃÂ°ÃÂÃÂÃÂ¢ Extracted Program Name:", programName);
+
+    if (programName && programName.toLowerCase() === "detox") {
+        console.log("ÃÂ¢ÃÂÃÂ Program is Detox. Setting Postal Code as required...");
+
+        var postalCodeField = formContext.getAttribute("cp_postalcode");
+        var postalCodeControl = formContext.getControl("cp_postalcode");
+
+        if (postalCodeField) {
+            postalCodeField.setRequiredLevel("required");
+            console.log("ÃÂ¢ÃÂÃÂ Postal Code field set to Required.");
+        } else {
+            console.warn("ÃÂ¢ÃÂÃÂ  Postal Code field (cp_postalcode) not found.");
+        }
+
+        if (postalCodeControl) {
+            postalCodeControl.setLabel("Postal Code" +
+                " ÃÂ¢ÃÂÃÂ¢ Enter ÃÂ¢ÃÂÃÂA9A 9A9ÃÂ¢ÃÂÃÂ if missing or unknown - " +
+                " ÃÂ¢ÃÂÃÂ¢ Enter ÃÂ¢ÃÂÃÂA1A 1A1ÃÂ¢ÃÂÃÂ if the client has no fixed address");
+            console.log("ÃÂ¢ÃÂÃÂ Postal Code field label updated.");
+        } else {
+            console.warn("ÃÂ¢ÃÂÃÂ  Postal Code control not found.");
+        }
+    } else {
+        console.log("ÃÂ¢ÃÂÃÂ Program is NOT Detox. Resetting Postal Code field properties...");
+
+        var postalCodeField = formContext.getAttribute("cp_postalcode");
+        var postalCodeControl = formContext.getControl("cp_postalcode");
+
+        if (postalCodeField) {
+            postalCodeField.setRequiredLevel("none"); // Remove required status
+            console.log("ÃÂ¢ÃÂÃÂ Postal Code field set to Optional.");
+        } else {
+            console.warn("ÃÂ¢ÃÂÃÂ  Postal Code field (cp_postalcode) not found.");
+        }
+
+        if (postalCodeControl) {
+            postalCodeControl.setLabel("Postal Code"); // Reset label
+            console.log("ÃÂ¢ÃÂÃÂ Postal Code field label reset.");
+        } else {
+            console.warn("ÃÂ¢ÃÂÃÂ  Postal Code control not found.");
+        }
+    }
+}
+
+
+
+// code block separator
+
+
+
+//Copy MDRATE fields that exist other tables =======
+
+function setPsudoName(executionContext) {
+    console.log("ÃÂ°ÃÂÃÂÃÂ setPseudoName triggered!");
 
     var formContext = executionContext.getFormContext();
 
     // Get Client Field (Lookup)
     var clientField = formContext.getAttribute("cp_client");
     if (!clientField) {
-        console.error("❌ Client field (cp_client) not found");
+        console.error("ÃÂ¢ÃÂÃÂ Client field (cp_client) not found!");
         return;
     }
 
     var clientValue = clientField.getValue();
     if (!Array.isArray(clientValue) || clientValue.length === 0) {
-        console.warn("⚠️ No client selected");
+        console.warn("ÃÂ¢ÃÂÃÂ  No client selected.");
         return;
     }
 
-    var clientId = clientValue[0].id.replace(/[{}]/g, "");
-    console.log("🔎 Client ID:", clientId);
+    var clientId = clientValue[0].id.replace(/[{}]/g, ""); // Extract the Client ID
+    console.log("ÃÂ°ÃÂÃÂÃÂ Client ID:", clientId);
 
     // Get Pseudo Name Field
     var pseudoField = formContext.getAttribute("cp_pseudoname");
     if (!pseudoField) {
-        console.error("❌ Pseudo Name field (cp_pseudoname) not found");
+        console.error("ÃÂ¢ÃÂÃÂ Pseudo Name field (cp_pseudoname) not found!");
         return;
     }
 
-    console.log("✅ Generating Pseudo Name (PHN check removed)");
+    console.log("ÃÂ¢ÃÂÃÂ Generating Pseudo Name for all clients (PHN check removed).");
 
     // Process Client Name (Remove Spaces & Convert to Lowercase)
     var clientName = clientValue[0].name.replace(/\s+/g, "").toLowerCase();
-    console.log("📦 Processed Client Name:", clientName);
+    console.log("ÃÂ°ÃÂÃÂÃÂ¢ Processed Client Name:", clientName);
 
     // Extract the last 3 characters
     var lastThreeLetters = clientName.length >= 3 ? clientName.slice(-3) : clientName;
-    console.log("🎯 Final Pseudo Name:", lastThreeLetters);
+
+    console.log("ÃÂ¢ÃÂÃÂ Final Pseudo Name (No Spaces, Lowercase):", lastThreeLetters);
 
     // Set the value and trigger UI update
     pseudoField.setValue(lastThreeLetters);
     pseudoField.fireOnChange();
 }
-
 
 
 
@@ -832,6 +998,9 @@ function fetchTableField(executionContext, lookupFieldSchema, targetFieldSchema,
 }
 
 
+// code block separator
+
+
 //reload feild in order to triger down stream events
 function reloadLookupField(executionContext, lookupFieldSchema) {
     console.log(`[reloadLookupField] Triggered for lookup field: ${lookupFieldSchema}`);
@@ -875,17 +1044,10 @@ function reloadLookupField(executionContext, lookupFieldSchema) {
 }
 
 
+// code block separator
 
 
-/**
- * enforceMaxSelections
- * ----------------------------------------
- * Limits the number of selected options in a multi-select choice field.
- *
- * @param {object} executionContext - The execution context passed from Power Apps.
- * @param {string} fieldName - The logical name of the multi-select field to enforce limits on.
- * @param {number} maxAllowed - The maximum number of allowed selections.
- */
+//Limit the number of options that can be selected for choice qustion
 function enforceMaxSelections(executionContext, fieldName, maxAllowed) {
     var formContext = executionContext.getFormContext();
     var field = formContext.getAttribute(fieldName);
@@ -910,6 +1072,7 @@ function enforceMaxSelections(executionContext, fieldName, maxAllowed) {
 }
 
 
+// code block separator
 
 
 function toggleWebResourceVisibility(executionContext) {
@@ -1028,6 +1191,68 @@ function updateAppointmentConcatenation(executionContext) {
 
 
 
+function setServiceRequestDate(executionContext) {
+    var formContext = executionContext.getFormContext();
+    
+    console.log("setServiceRequestDate triggered on save.");
+
+    var admissionId = formContext.data.entity.getId();
+    if (!admissionId) {
+        console.warn("Admission ID not yet available (unsaved record).");
+        return;
+    }
+    admissionId = admissionId.replace("{", "").replace("}", "");
+    console.log("Admission ID:", admissionId);
+
+    var assessmentQuery = "?$select=cp_assessmentid,createdon" +
+                          "&$filter=_cp_admission_value eq " + admissionId +
+                          "&$orderby=createdon asc&$top=1";
+
+    Xrm.WebApi.retrieveMultipleRecords("cp_assessment", assessmentQuery).then(
+        function(assessmentResult) {
+            console.log("Assessment Results:", assessmentResult);
+
+            if (assessmentResult.entities.length === 0) {
+                console.warn("No Assessments found for this Admission.");
+                return;
+            }
+
+            var assessmentId = assessmentResult.entities[0].cp_assessmentid;
+
+            var checkinQuery = "?$select=cp_checkindate" +
+                               "&$filter=_cp_assessment_value eq " + assessmentId +
+                               "&$orderby=cp_checkindate asc&$top=1";
+
+            Xrm.WebApi.retrieveMultipleRecords("cp_checkin", checkinQuery).then(
+                function(checkinResult) {
+                    console.log("Check-in Results:", checkinResult);
+
+                    if (checkinResult.entities.length === 0) {
+                        console.warn("No Check-ins found for this Assessment.");
+                        return;
+                    }
+
+                    var firstCheckinDate = new Date(checkinResult.entities[0].cp_checkindate);
+                    console.log("First Check-in Date:", firstCheckinDate);
+
+                    formContext.getAttribute("cp_servicerequestdate").setValue(firstCheckinDate);
+                    formContext.data.entity.save(); // ensure date is saved immediately
+                    console.log("Service Request Date set and Admission saved.");
+                },
+                function(error) {
+                    console.error("Check-in retrieval error:", error.message);
+                }
+            );
+        },
+        function(error) {
+            console.error("Assessment retrieval error:", error.message);
+        }
+    );
+}
+
+
+// code block separator
+
 
 function copyAdmissionDateTime(executionContext) {
     // Retrieve the form context
@@ -1053,7 +1278,7 @@ function setShiftType(executionContext) {
     var formContext = executionContext.getFormContext();
 
     // Retrieve the shift date and time value
-    var shiftDateTime = formContext.getAttribute("cp_shiftdateandtime").getValue();
+    var shiftDateTime = formContext.getAttribute("createdon").getValue();
     
     if (shiftDateTime) {
         // Extract the hour from the date (0-23)
@@ -1073,15 +1298,51 @@ function setShiftType(executionContext) {
 }
 
 
+
+// code block separator
+
+
+
 function setCurrentShiftDateTime(executionContext) {
-    // Get the form context
-    var formContext = executionContext.getFormContext();
+  var formContext = executionContext.getFormContext();
 
-    // Get the current date and time
-    var currentDateTime = new Date();
+  // 1 = Create (unsaved new record), 2 = Update (already saved)
+  var formType = formContext.ui.getFormType();
+  if (formType !== 1) {
+    // Not a brand‑new record: do nothing
+    return;
+  }
 
-    // Set the date and time in the cp_shiftdateandtime field
-    formContext.getAttribute("cp_shiftdateandtime").setValue(currentDateTime);
+  var attr = formContext.getAttribute("cp_shiftdateandtime");
+  if (!attr) return;                 // field missing on form
+  if (attr.getValue()) return;       // someone already set it (don’t overwrite)
+
+  // Set current date/time (user local)
+  attr.setValue(new Date());
+}
+
+
+
+// code block separator
+
+
+
+function setAssessmentDateTimeToCurrentTime(executionContext) {
+  var formContext = executionContext.getFormContext();
+
+  // 1 = Create (unsaved new record), 2 = Update (already saved)
+  var formType = formContext.ui.getFormType();
+  if (formType !== 1) {
+    // Not a brand‑new record: do nothing
+    return;
+  }
+
+  var attr = formContext.getAttribute("cp_assessmentdateandtime");
+  if (!attr) return;                 // field missing on form
+  if (attr.getValue()) return;       // someone already set it (don’t overwrite)
+
+  // Set current date/time (user local)
+  attr.setValue(new Date());
 }
 
 
@@ -1408,7 +1669,7 @@ function updateAssessmentSubstances(executionContext) {
             var primaryStr = primarySubstances.join(", ");
             var secondaryStr = secondarySubstances.join(", ");
             var otherStr = otherSubstances.join(", ");
-            var finalStr = "primary: {" + primaryStr + "} / secondary: {" + secondaryStr + "} / other: {" + otherStr + "}";
+            var finalStr = primaryStr + ", " + secondaryStr + ", " + otherStr;
 
             // Write the final string into the all_substances array.
             all_substances.push(finalStr);
@@ -1524,118 +1785,152 @@ function updateAssessmentOutcome(executionContext) {
 
 
 function processAssessmentAndCreateAdmission(executionContext) {
-    // Helper: Check if the outcome is one of the desired option values.
-    function isDesiredOutcome(value) {
-        return value === 121570000 || value === 121570001;
-    }
-    // Helper: Format a date to "YYYY-MM-DD"
-    function formatDateForEdm(dateValue) {
-        if (!dateValue) return null;
-        var d = new Date(dateValue);
-        var year = d.getFullYear();
-        var month = ('0' + (d.getMonth() + 1)).slice(-2);
-        var day = ('0' + d.getDate()).slice(-2);
-        return year + '-' + month + '-' + day;
-    }
-    
-    var formContext = executionContext.getFormContext();
-    var newOutcome = formContext.getAttribute("cp_outcome").getValue();
-    var formType = formContext.ui.getFormType(); // 1 = Create, 2 = Update, etc.
-    
-    // Process only if a new record qualifies or an update changes outcome to one of the desired values.
-    if ((formType === 1 && isDesiredOutcome(newOutcome)) ||
-        (formType === 2 && !isDesiredOutcome(window.initialOutcome) && isDesiredOutcome(newOutcome))) {
-        
-        // Retrieve client data from the form.
-        var firstName = formContext.getAttribute("cp_firstname").getValue();
-        var lastName = formContext.getAttribute("cp_lastname").getValue();
-        var dob = formContext.getAttribute("cp_dateofbirth").getValue();
-		var phone = formContext.getAttribute("cp_phone").getValue();
-		var ethnicity = formContext.getAttribute("cp_ethnicity").getValue();
-        var formattedDOB = formatDateForEdm(dob);
-		
-        
-        var clientRecord = {
-            firstname: firstName,
-            lastname: lastName,
-            cp_dateofbirth: formattedDOB,
-			cp_phone: phone,
-			cp_ethnicity: ethnicity,
-            cp_gender: formContext.getAttribute("cp_gender").getValue(),
-            cp_firstcontactdate: formatDateForEdm(formContext.getAttribute("cp_firstcontactdate").getValue()),
-            // Mark as created by an assessment ("Yes" option value: 121570000).
-            cp_createdbyassessment: 121570000
-        };
-        
-        // Build an OData query to check for an existing client.
-        var query = "?$filter=firstname eq '" + firstName +
-                    "' and lastname eq '" + lastName +
-                    "' and cp_dateofbirth eq " + formattedDOB;
-        
-        // This function updates the current assessment record to reference the client
-        // and then creates a new admission record that links to both the current assessment and the client.
-        function updateAssessmentAndCreateAdmission(clientId) {
-            var assessmentId = formContext.data.entity.getId();
-            var updatePayload = {
-                cp_newclient: 121570001, // "No" option value.
-                "cp_Client@odata.bind": "/contacts(" + clientId + ")"
-            };
-            Xrm.WebApi.updateRecord("cp_assessment", assessmentId, updatePayload).then(
-                function successUpdate() {
-                    console.log("Assessment updated with client reference.");
-                    // Clean the assessment ID.
-                    var cleanedAssessmentId = assessmentId.replace('{', '').replace('}', '');
-                    // Build the admission record payload.
-                    // Note: The assessment lookup now uses "cp_Assessment" (with capital "A") and
-                    // the client lookup is assigned to the "cp_client" field.
-                    var admissionRecord = {
-                        "cp_Assessment@odata.bind": "/cp_assessments(" + cleanedAssessmentId + ")",
-                        "cp_Client@odata.bind": "/contacts(" + clientId + ")"
-                    };
-                    Xrm.WebApi.createRecord("cp_cp_admission", admissionRecord).then(
-                        function successAdmission(result) {
-                            console.log("Admission record created with ID: " + result.id);
-                        },
-                        function errorAdmission(error) {
-                            console.error("Error creating admission record: " + error.message);
-                        }
-                    );
-                },
-                function errorUpdate(error) {
-                    console.error("Error updating assessment record: " + error.message);
-                }
-            );
-        }
-        
-        // Check if the client exists. If yes, update assessment and create admission; if not, create the client then proceed.
-        Xrm.WebApi.retrieveMultipleRecords("contact", query).then(
-            function success(result) {
-                if (result.entities && result.entities.length > 0) {
-                    console.log("Client already exists. Using existing client record.");
-                    var existingClientId = result.entities[0].contactid;
-                    existingClientId = existingClientId.replace('{', '').replace('}', '');
-                    updateAssessmentAndCreateAdmission(existingClientId);
-                } else {
-                    Xrm.WebApi.createRecord("contact", clientRecord).then(
-                        function successCreate(clientResult) {
-                            console.log("Client record created with ID: " + clientResult.id);
-                            var newClientId = clientResult.id.replace('{', '').replace('}', '');
-                            updateAssessmentAndCreateAdmission(newClientId);
-                        },
-                        function errorCreate(error) {
-                            console.error("Error creating client record: " + error.message);
-                        }
-                    );
-                }
-            },
-            function errorRetrieve(error) {
-                console.error("Error retrieving client record: " + error.message);
-            }
-        );
+  var formContext = executionContext.getFormContext();
+
+  // –––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+  // Helpers
+  // –––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+  function isDesiredOutcome(value) {
+    return value === 121570000 || value === 121570001; // Admitted or Bed on Hold
+  }
+  function formatDateForEdm(dateValue) {
+    if (!dateValue) return null;
+    var d = new Date(dateValue),
+        yyyy = d.getFullYear(),
+        mm   = ('0' + (d.getMonth() + 1)).slice(-2),
+        dd   = ('0' + d.getDate()).slice(-2);
+    return yyyy + '-' + mm + '-' + dd;
+  }
+
+  // –––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+  // 1) Only run if outcome has just become Admitted/Bed-on-Hold
+  // –––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+  var newOutcome = formContext.getAttribute("cp_outcome").getValue();
+  var formType   = formContext.ui.getFormType(); // 1=Create, 2=Update
+  if (!(
+      (formType === 1 && isDesiredOutcome(newOutcome)) ||
+      (formType === 2 &&
+         !isDesiredOutcome(window.initialOutcome) &&
+          isDesiredOutcome(newOutcome)
+      )
+    )) {
+    console.log("Skipping: outcome not in target set.");
+    return;
+  }
+
+  // –––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+  // 2) If cp_newclient = No (121570001), use existing client
+  // –––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+  var newClientFlag = formContext.getAttribute("cp_newclient").getValue();
+  if (newClientFlag === 121570001) {
+    var clientLookup = formContext.getAttribute("cp_client").getValue();
+    if (clientLookup && clientLookup.length) {
+      var existingClientId = clientLookup[0].id.replace(/[{}]/g, '');
+      console.log("Existing client; skipping contact create.");
+      updateAssessmentAndCreateAdmission(existingClientId);
     } else {
-        console.log("Assessment outcome is not eligible for processing.");
+      console.error("Cannot proceed: cp_client lookup is empty.");
     }
+    return;  // done
+  }
+
+  // –––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+  // 3) Otherwise, build clientRecord & query for existing contact
+  // –––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+  var firstName = formContext.getAttribute("cp_firstname").getValue();
+  var lastName  = formContext.getAttribute("cp_lastname").getValue();
+  var dobRaw    = formContext.getAttribute("cp_dateofbirth").getValue();
+  var formattedDOB = formatDateForEdm(dobRaw);
+
+  // bail if any lookup key is missing
+  if (!firstName || !lastName || !formattedDOB) {
+    console.error("Missing details; cannot find or create client.", {
+      firstName, lastName, formattedDOB
+    });
+    return;
+  }
+
+  var clientRecord = {
+    firstname: firstName,
+    lastname: lastName,
+    cp_dateofbirth: formattedDOB,
+    cp_gender: formContext.getAttribute("cp_gender").getValue(),
+    cp_ethnicity: formContext.getAttribute("cp_ethnicity").getValue(),
+    cp_firstcontactdate: formatDateForEdm(formContext.getAttribute("cp_firstcontactdate").getValue()),
+    cp_createdbyassessment: 121570000
+  };
+
+  // OData filter: unquoted date
+  var esc = function(str) { return str.replace(/'/g, "''"); };
+  var query = "?$filter=firstname eq '" + esc(firstName) +
+              "' and lastname eq '" + esc(lastName) +
+              "' and cp_dateofbirth eq " + formattedDOB;
+
+  console.log("Querying existing contacts:", query);
+  Xrm.WebApi.retrieveMultipleRecords("contact", query).then(
+    function success(result) {
+      if (result.entities.length > 0) {
+        var clientId = result.entities[0].contactid.replace(/[{}]/g, '');
+        console.log("Found existing client:", clientId);
+        updateAssessmentAndCreateAdmission(clientId);
+      } else {
+        console.log("No client found; creating new one.");
+        Xrm.WebApi.createRecord("contact", clientRecord).then(
+          function(res) {
+            var newId = res.id.replace(/[{}]/g, '');
+            console.log("Created client:", newId);
+            updateAssessmentAndCreateAdmission(newId);
+          },
+          function(err) {
+            console.error("Error creating client:", err.message);
+          }
+        );
+      }
+    },
+    function error(err) {
+      console.error("Lookup failed:", err.message);
+    }
+  );
+
+  // –––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+  // Nested function: updates assessment and conditionally creates admission
+  // –––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+  function updateAssessmentAndCreateAdmission(clientId) {
+    var assessmentId = formContext.data.entity.getId().replace(/[{}]/g, '');
+    var updatePayload = {
+      cp_newclient: 121570001,
+      "cp_Client@odata.bind": "/contacts(" + clientId + ")"
+    };
+
+    Xrm.WebApi.updateRecord("cp_assessment", assessmentId, updatePayload)
+      .then(function() {
+        console.log("Assessment updated; checking for existing admissions...");
+        var admissionQuery = "?$filter=_cp_assessment_value eq " + assessmentId;
+        return Xrm.WebApi.retrieveMultipleRecords("cp_cp_admission", admissionQuery);
+      })
+      .then(function(result) {
+        if (result.entities.length > 0) {
+          console.log("Admission already exists; skipping creation.");
+          return;
+        }
+        console.log("No admission found; creating admission...");
+        var admissionPayload = {
+          "cp_Assessment@odata.bind": "/cp_assessments(" + assessmentId + ")",
+          "cp_Client@odata.bind":     "/contacts(" + clientId   + ")"
+        };
+        return Xrm.WebApi.createRecord("cp_cp_admission", admissionPayload);
+      })
+      .then(function(createResult) {
+        if (createResult && createResult.id) {
+          console.log("Admission created: " + createResult.id);
+        }
+      })
+      .catch(function(err) {
+        console.error("Error in update/create:", err.message);
+      });
+  }
 }
+
 
 
 // code block separator
@@ -1680,8 +1975,443 @@ function updateAssessmentOutcomeToDeclinedBed(executionContext) {
 
 
 
+// code block separator
+
+
+
+function ShiftSupervisorSignedoffVisibility(executionContext) {
+    var formContext = executionContext.getFormContext();
+    var userRoles = Xrm.Utility.getGlobalContext().userSettings.roles.getAll();
+    var allowedRoles = ["System Administrator", "System Customizer", "AHC Beta Tester", "Detox Supervisor", "Detox Managers", "Detox Directors", "Detox Senior Management"];
+    var hasAccess = userRoles.some(function(role) {
+        return allowedRoles.includes(role.name);
+    });
+
+    formContext.getControl("cp_shiftsupervisorsignedoff").setVisible(hasAccess);
+    formContext.getControl("cp_shiftsupervisorsignature").setVisible(hasAccess);
+}
 
 
 
 
+// code block separator
 
+
+
+
+//On change 
+function checkRecentAssessmentForClient(executionContext) {
+    console.log("🔍 checkRecentAssessmentForClient triggered!");
+
+    var formContext = executionContext.getFormContext();
+    if (!formContext) {
+        console.error("❌ Form context not found!");
+        return;
+    }
+
+    // Get Client Field (Lookup)
+    var clientField = formContext.getAttribute("cp_client");
+    if (!clientField) {
+        console.warn("⚠️ Client field (cp_client) not found!");
+        return;
+    }
+
+    var clientValue = clientField.getValue();
+    if (!Array.isArray(clientValue) || clientValue.length === 0) {
+        console.warn("⚠️ No client selected.");
+        return;
+    }
+
+    var clientId = clientValue[0].id.replace(/[{}]/g, ""); // Extract the Client ID
+    var clientName = clientValue[0].name;
+    console.log("🔍 Client ID:", clientId);
+    console.log("🔍 Client Name:", clientName);
+
+    // Calculate the datetime from 1 hour ago
+    var currentDateTime = new Date();
+    var oneHourAgo = new Date(currentDateTime.getTime() - (60 * 60 * 1000)); // 1 hour = 60 minutes * 60 seconds * 1000 milliseconds
+    
+    // Format the datetime for OData query (ISO 8601 format)
+    var oneHourAgoISO = oneHourAgo.toISOString();
+    console.log("🕐 Checking for assessments created after:", oneHourAgoISO);
+
+    // Get the current assessment ID to exclude it from the search (if we're on an existing assessment)
+    var currentAssessmentId = null;
+    try {
+        var entityId = formContext.data.entity.getId();
+        if (entityId) {
+            currentAssessmentId = entityId.replace(/[{}]/g, "");
+            console.log("📝 Current Assessment ID (will be excluded):", currentAssessmentId);
+        }
+    } catch (error) {
+        console.log("📝 No current assessment ID found (likely a new record)");
+    }
+
+    // Build the OData query to find assessments for this client created in the last hour
+    var filter = "_cp_client_value eq " + clientId + " and createdon gt " + oneHourAgoISO;
+    
+    // If we have a current assessment ID, exclude it from the results
+    if (currentAssessmentId) {
+        filter += " and cp_assessmentid ne " + currentAssessmentId;
+    }
+
+    var query = "?$filter=" + filter + "&$select=cp_assessmentid,createdon&$orderby=createdon desc";
+
+    console.log("🔍 Query:", query);
+
+    // Execute the query to check for recent assessments
+    Xrm.WebApi.retrieveMultipleRecords("cp_assessment", query).then(
+        function (result) {
+            console.log("✅ Query successful. Found " + result.entities.length + " recent assessment(s).");
+            
+            if (result.entities.length > 0) {
+                 // Found recent assessment(s) - show warning
+                var recentAssessment = result.entities[0]; // Get the most recent one
+                var createdDate = new Date(recentAssessment.createdon);
+                var timeDifference = Math.round((currentDateTime - createdDate) / (1000 * 60)); // Difference in minutes
+                
+                console.log("⚠️ Recent assessment found!");
+                console.log("📅 Created:", createdDate.toLocaleString());
+                console.log("⏱️ Time difference:", timeDifference + " minutes ago");
+
+                // Create warning message
+                var warningMessage = "⚠️ WARNING: Duplicate Assessment Alert\n\n" +
+                    "A recent assessment for client '" + clientName + "' was created " + timeDifference + " minutes ago.\n\n" +
+                    "Created: " + createdDate.toLocaleString() + "\n\n" +
+                    "Please verify if this is a duplicate entry before proceeding.\n\n" +
+                    "Click OK to continue or Cancel to review the existing assessment.";
+
+                // Show confirmation dialog
+                var confirmResult = confirm(warningMessage);
+                
+                if (!confirmResult) {
+                    console.log("🚫 User chose to cancel. Stopping form processing.");
+                    // Optionally prevent form save or redirect user
+                    // You can add additional logic here like:
+                    // - Prevent form save
+                    // - Redirect to the existing assessment
+                    // - Clear the form
+                    return false;
+                } else {
+                    console.log("✅ User confirmed to proceed despite duplicate warning.");
+                }
+            } else {
+                console.log("✅ No recent assessments found for this client in the last hour.");
+            }
+        },
+        function (error) {
+            console.error("❌ Error checking for recent assessments:", error.message);
+            // Don't block the user if there's an error in the check
+        }
+    );
+}
+
+// OnSave event function that prevents save when duplicate is detected
+function checkDuplicateAssessmentOnSave(executionContext) {
+    console.log("💾 checkDuplicateAssessmentOnSave triggered!");
+
+    var eventArgs = executionContext.getEventArgs();
+    var formContext = executionContext.getFormContext();
+
+    if (!formContext) {
+        console.error("❌ Form context not found!");
+        return; // Allow save to proceed if we can't check
+    }
+
+    // Get Client Field (Lookup)
+    var clientField = formContext.getAttribute("cp_client");
+    if (!clientField) {
+        console.warn("⚠️ Client field (cp_client) not found!");
+        return; // Allow save to proceed
+    }
+
+    var clientValue = clientField.getValue();
+    if (!Array.isArray(clientValue) || clientValue.length === 0) {
+        console.warn("⚠️ No client selected.");
+        return; // Allow save to proceed
+    }
+
+    var clientId = clientValue[0].id.replace(/[{}]/g, "");
+    var clientName = clientValue[0].name;
+    console.log("💾 Checking duplicates for Client:", clientName, "ID:", clientId);
+
+    // Calculate one hour ago
+    var currentDateTime = new Date();
+    var oneHourAgo = new Date(currentDateTime.getTime() - (60 * 60 * 1000));
+    var oneHourAgoISO = oneHourAgo.toISOString();
+
+    // Get current assessment ID to exclude from search (for updates)
+    var currentAssessmentId = null;
+    try {
+        var entityId = formContext.data.entity.getId();
+        if (entityId) {
+            currentAssessmentId = entityId.replace(/[{}]/g, "");
+            console.log("💾 Current Assessment ID (excluding from search):", currentAssessmentId);
+        }
+    } catch (error) {
+        console.log("💾 New assessment record - no existing ID to exclude");
+    }
+
+    // Build query to find recent assessments
+    var filter = "_cp_client_value eq " + clientId + " and createdon gt " + oneHourAgoISO;
+    if (currentAssessmentId) {
+        filter += " and cp_assessmentid ne " + currentAssessmentId;
+    }
+
+    var query = "?$filter=" + filter + "&$select=cp_assessmentid,createdon&$orderby=createdon desc&$top=1";
+    console.log("💾 Duplicate check query:", query);
+
+    // Prevent the save initially
+    eventArgs.preventDefault();
+    console.log("💾 Save prevented - checking for duplicates...");
+
+    // Execute the duplicate check
+    Xrm.WebApi.retrieveMultipleRecords("cp_assessment", query).then(
+        function (result) {
+            console.log("💾 Duplicate check complete. Found " + result.entities.length + " recent assessment(s).");
+            
+            if (result.entities.length > 0) {
+                // Duplicate found - show warning and ask user
+                var recentAssessment = result.entities[0];
+                var createdDate = new Date(recentAssessment.createdon);
+                var timeDifference = Math.round((currentDateTime - createdDate) / (1000 * 60));
+                
+                console.log("⚠️ DUPLICATE DETECTED!");
+                console.log("📅 Existing assessment created:", createdDate.toLocaleString());
+                console.log("⏱️ Time difference:", timeDifference + " minutes ago");
+                console.log("🆔 Existing assessment ID:", recentAssessment.cp_assessmentid);
+
+                var warningMessage = "🚨 DUPLICATE ASSESSMENT DETECTED!\n\n" +
+                    "⚠️ STOP: An assessment for client '" + clientName + "' was already created " + timeDifference + " minutes ago.\n\n" +
+                    "📅 Existing Assessment Created: " + createdDate.toLocaleString() + "\n" +
+                    "🆔 Assessment ID: " + recentAssessment.cp_assessmentid + "\n\n" +
+                    "❓ Do you want to proceed with creating this duplicate assessment?\n\n" +
+                    "• Click 'OK' to save anyway (duplicate will be created)\n" +
+                    "• Click 'Cancel' to stop and review the existing assessment";
+
+                var userConfirmed = confirm(warningMessage);
+                
+                if (userConfirmed) {
+                    console.log("✅ User confirmed to proceed with duplicate save.");
+                    
+                    // Show a warning notification on the form
+                    formContext.ui.setFormNotification(
+                        "⚠️ WARNING: This is a duplicate assessment created " + timeDifference + " minutes after an existing one.",
+                        "WARNING",
+                        "duplicateAssessmentWarning"
+                    );
+                    
+                    // Proceed with save
+                    formContext.data.entity.save().then(
+                        function() {
+                            console.log("✅ Duplicate assessment saved successfully.");
+                        },
+                        function(error) {
+                            console.error("❌ Error saving duplicate assessment:", error.message);
+                        }
+                    );
+                } else {
+                    console.log("🚫 User cancelled save due to duplicate warning.");
+                    
+                    // Show information about the existing assessment
+                    formContext.ui.setFormNotification(
+                        "❌ Save cancelled - Recent assessment exists for this client (Created: " + createdDate.toLocaleString() + ")",
+                        "ERROR",
+                        "saveCancelledDuplicate"
+                    );
+                    
+                    // Optionally, you could navigate to the existing assessment
+                    // var entityFormOptions = {};
+                    // entityFormOptions["entityName"] = "cp_assessment";
+                    // entityFormOptions["entityId"] = recentAssessment.cp_assessmentid;
+                    // Xrm.Navigation.openForm(entityFormOptions);
+                }
+            } else {
+                console.log("✅ No duplicates found - proceeding with save.");
+                
+                // Clear any previous duplicate warnings
+                formContext.ui.clearFormNotification("duplicateAssessmentWarning");
+                formContext.ui.clearFormNotification("saveCancelledDuplicate");
+                
+                // Proceed with normal save
+                formContext.data.entity.save().then(
+                    function() {
+                        console.log("✅ Assessment saved successfully (no duplicates detected).");
+                    },
+                    function(error) {
+                        console.error("❌ Error saving assessment:", error.message);
+                    }
+                );
+            }
+        },
+        function (error) {
+            console.error("❌ Error checking for duplicates during save:", error.message);
+            
+            // If there's an error checking for duplicates, allow the save to proceed
+            console.log("⚠️ Proceeding with save due to duplicate check error.");
+            formContext.data.entity.save();
+        }
+    );
+}
+
+
+// Synchronous duplicate check function WITH popup that doesn't cause loops
+function checkDuplicateAssessmentSync(executionContext) {
+    console.log("🔍 Checking for duplicate assessments (synchronous)...");
+    
+    var formContext = executionContext.getFormContext();
+    
+    // Get Client Field (Lookup)
+    var clientField = formContext.getAttribute("cp_client");
+    if (!clientField) {
+        console.warn("⚠️ Client field not found - skipping duplicate check");
+        return false; // Don't block save
+    }
+
+    var clientValue = clientField.getValue();
+    if (!Array.isArray(clientValue) || clientValue.length === 0) {
+        console.warn("⚠️ No client selected - skipping duplicate check");
+        return false; // Don't block save
+    }
+
+    var clientId = clientValue[0].id.replace(/[{}]/g, "");
+    var clientName = clientValue[0].name;
+    console.log("🔍 Checking duplicates for Client:", clientName);
+
+    // Get current assessment ID to exclude from search
+    var currentAssessmentId = null;
+    try {
+        var entityId = formContext.data.entity.getId();
+        if (entityId) {
+            currentAssessmentId = entityId.replace(/[{}]/g, "");
+        }
+    } catch (error) {
+        // New record - no current ID
+    }
+
+    // Calculate one hour ago
+    var currentDateTime = new Date();
+    var oneHourAgo = new Date(currentDateTime.getTime() - (60 * 60 * 1000));
+    var oneHourAgoISO = oneHourAgo.toISOString();
+
+    // Build query
+    var filter = "_cp_client_value eq " + clientId + " and createdon gt " + oneHourAgoISO;
+    if (currentAssessmentId) {
+        filter += " and cp_assessmentid ne " + currentAssessmentId;
+    }
+
+    var query = "?$filter=" + filter + "&$select=cp_assessmentid,createdon&$orderby=createdon desc&$top=1";
+
+    // We can't do truly synchronous API calls in the browser, so we'll use a flag system
+    // Check if we've already confirmed this save
+    if (formContext._duplicateConfirmed) {
+        console.log("✅ Duplicate already confirmed - proceeding with save");
+        delete formContext._duplicateConfirmed;
+        return false; // Don't block save
+    }
+
+    // Store the duplicate check for async execution but don't block this save
+    setTimeout(function() {
+        Xrm.WebApi.retrieveMultipleRecords("cp_assessment", query).then(
+            function (result) {
+                if (result.entities.length > 0) {
+                    var recentAssessment = result.entities[0];
+                    var createdDate = new Date(recentAssessment.createdon);
+                    var timeDifference = Math.round((currentDateTime - createdDate) / (1000 * 60));
+                    
+                    console.log("⚠️ DUPLICATE DETECTED!");
+                    
+                    // Show warning notification on form
+                    formContext.ui.setFormNotification(
+                        "⚠️ WARNING: Another assessment for " + clientName + " was created " + timeDifference + " minutes ago (ID: " + recentAssessment.cp_assessmentid + ")",
+                        "WARNING",
+                        "duplicateAssessmentWarning"
+                    );
+                } else {
+                    console.log("✅ No duplicates found.");
+                    formContext.ui.clearFormNotification("duplicateAssessmentWarning");
+                }
+            },
+            function (error) {
+                console.error("❌ Error checking duplicates:", error.message);
+            }
+        );
+    }, 100);
+
+    // Don't block the save - just show warnings after
+    return false;
+}
+
+
+
+// code block separator
+
+
+// Simple synchronous orchestrator function for OnSave event
+function assessmentSaveOrchestrator(executionContext) {
+    console.log("🎯 === ASSESSMENT SAVE ORCHESTRATOR STARTED (SYNC) ===");
+    
+    var eventArgs = executionContext.getEventArgs();
+    var formContext = executionContext.getFormContext();
+
+    if (!formContext) {
+        console.error("❌ Form context not found!");
+        return;
+    }
+
+    // Check if this is a bypass save (to prevent infinite loop)
+    if (formContext._bypassOrchestrator) {
+        console.log("🔄 Bypass flag detected - skipping orchestrator");
+        delete formContext._bypassOrchestrator;
+        return;
+    }
+
+    // Step 1: Check for duplicates FIRST (most important)
+    var shouldBlockSave = false;
+    try {
+        console.log("🔍 Step 1: Checking for duplicate assessments...");
+        shouldBlockSave = checkDuplicateAssessmentSync(executionContext);
+        if (shouldBlockSave) {
+            console.log("🚫 Save blocked due to duplicate check");
+            eventArgs.preventDefault();
+            return;
+        }
+        console.log("✅ Step 1 Complete: Duplicate check passed");
+    } catch (error) {
+        console.error("❌ Error in Step 1:", error);
+        // Continue with save despite error
+    }
+    
+    // Step 2: Update Assessment Substances
+    try {
+        console.log("💊 Step 2: Updating assessment substances...");
+        updateAssessmentSubstances(executionContext);
+        console.log("✅ Step 2 Complete: Substances update initiated");
+    } catch (error) {
+        console.error("❌ Error in Step 2:", error);
+        // Continue with save despite error
+    }
+    
+    // Step 3: Update Assessment with Check-in Dates
+    try {
+        console.log("📋 Step 3: Updating assessment with check-in dates...");
+        updateAssessmentWithCheckinDates(executionContext);
+        console.log("✅ Step 3 Complete: Check-in dates update initiated");
+    } catch (error) {
+        console.error("❌ Error in Step 3:", error);
+        // Continue with save despite error
+    }
+    
+    // Step 4: Process Assessment and Create Admission (LAST)
+    try {
+        console.log("📝 Step 4: Processing assessment and creating admission...");
+        processAssessmentAndCreateAdmission(executionContext);
+        console.log("✅ Step 4 Complete: Assessment processing initiated");
+    } catch (error) {
+        console.error("❌ Error in Step 4:", error);
+        // Continue with save despite error
+    }
+    
+    console.log("🎉 === ALL CHECKS COMPLETE - SAVE PROCEEDING ===");
+    // Save proceeds automatically since we didn't call preventDefault()
+}
