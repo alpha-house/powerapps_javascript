@@ -2343,8 +2343,132 @@ function checkDuplicateAssessmentSync(executionContext) {
 }
 
 
+/**
+* Checks if specified fields exist on the current form and displays warnings for missing fields
+ * @param {object} executionContext - The form execution context
+ * @param {string[]} fieldNames - Array of field schema names to check
+ * @param {string} entityName - Name of the entity/table being checked (for display purposes)
+ * @param {boolean} blockSave - Whether to prevent form save if fields are missing (default: false)
+ * @returns {boolean} - Returns true if any fields are missing, false if all exist
+ */
 
-// code block separator
+function checkRequiredFieldsExist(executionContext, fieldNames, entityName, blockSave = false) {
+    console.log("🔍 checkRequiredFieldsExist triggered!");
+    console.log("📋 Checking fields:", fieldNames);
+    console.log("📊 Entity:", entityName);
+
+    var formContext = executionContext.getFormContext();
+    if (!formContext) {
+        console.error("❌ Form context not found!");
+        return false;
+    }
+
+    var missingFields = [];
+    var missingAttributes = [];
+    var missingControls = [];
+
+    // Check each field
+    fieldNames.forEach(function(fieldName) {
+        console.log("🔍 Checking field: " + fieldName);
+        
+        var attribute = formContext.getAttribute(fieldName);
+        var control = formContext.getControl(fieldName);
+        
+        if (!attribute) {
+            console.warn("⚠️ Attribute missing: " + fieldName);
+            missingAttributes.push(fieldName);
+            missingFields.push(fieldName);
+        }
+        
+        if (!control) {
+            console.warn("⚠️ Control missing: " + fieldName);
+            missingControls.push(fieldName);
+            if (missingFields.indexOf(fieldName) === -1) {
+                missingFields.push(fieldName);
+            }
+        }
+        
+        if (attribute && control) {
+            console.log("✅ Field exists: " + fieldName);
+        }
+    });
+
+    // If any fields are missing, show warning
+    if (missingFields.length > 0) {
+        console.error("❌ Missing fields detected:", missingFields);
+
+        // Create detailed warning message
+        var warningMessage = "⚠️ MISSING FIELD ALERT!\n\n" +
+            "The following required fields are missing from the " + entityName + " form:\n\n";
+
+        missingFields.forEach(function(field, index) {
+            warningMessage += "• " + field;
+            if (missingAttributes.indexOf(field) !== -1 && missingControls.indexOf(field) !== -1) {
+                warningMessage += " (Attribute & Control missing)";
+            } else if (missingAttributes.indexOf(field) !== -1) {
+                warningMessage += " (Attribute missing)";
+            } else if (missingControls.indexOf(field) !== -1) {
+                warningMessage += " (Control missing)";
+            }
+            warningMessage += "\n";
+        });
+
+        warningMessage += "\n📋 Fields Found: " + (fieldNames.length - missingFields.length) + "/" + fieldNames.length + "\n";
+        warningMessage += "❌ Fields Missing: " + missingFields.length + "\n\n";
+        warningMessage += "🛠️ Please contact your system administrator to add these fields to the form.";
+
+        // Show alert popup
+        alert(warningMessage);
+
+        // Show form notification
+        var notificationMessage = "❌ Missing Fields: " + missingFields.join(", ") + 
+            " (" + missingFields.length + "/" + fieldNames.length + " fields missing from " + entityName + " form)";
+        
+        formContext.ui.setFormNotification(
+            notificationMessage,
+            "ERROR",
+            "missingFieldsError"
+        );
+
+        // Block save if requested
+        if (blockSave && executionContext.getEventArgs) {
+            console.log("🚫 Blocking save due to missing fields");
+            executionContext.getEventArgs().preventDefault();
+        }
+
+        return true; // Fields are missing
+    } else {
+        console.log("✅ All fields exist on the form");
+        
+        // Clear any previous missing field notifications
+        formContext.ui.clearFormNotification("missingFieldsError");
+        
+        return false; // No fields missing
+    }
+}
+
+/**
+ * Wrapper function specifically for OnSave events that blocks save when fields are missing
+ * @param {object} executionContext - The form execution context
+ * @param {string[]} fieldNames - Array of field schema names to check
+ * @param {string} entityName - Name of the entity/table being checked
+ */
+function checkRequiredFieldsOnSave(executionContext, fieldNames, entityName) {
+    console.log("💾 checkRequiredFieldsOnSave triggered - blocking save if fields missing");
+    return checkRequiredFieldsExist(executionContext, fieldNames, entityName, true);
+}
+
+/**
+ * Wrapper function for OnLoad events that just shows warnings without blocking
+ * @param {object} executionContext - The form execution context
+ * @param {string[]} fieldNames - Array of field schema names to check
+ * @param {string} entityName - Name of the entity/table being checked
+ */
+function checkRequiredFieldsOnLoad(executionContext, fieldNames, entityName) {
+    console.log("📋 checkRequiredFieldsOnLoad triggered - warning only, no save blocking");
+    return checkRequiredFieldsExist(executionContext, fieldNames, entityName, false);
+}
+
 
 
 // Simple synchronous orchestrator function for OnSave event
