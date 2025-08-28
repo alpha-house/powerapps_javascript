@@ -2255,6 +2255,8 @@ function checkDuplicateAssessmentOnSave(executionContext) {
 }
 
 
+
+
 // Synchronous duplicate check function WITH popup that doesn't cause loops
 function checkDuplicateAssessmentSync(executionContext) {
     console.log("🔍 Checking for duplicate assessments (synchronous)...");
@@ -2344,44 +2346,49 @@ function checkDuplicateAssessmentSync(executionContext) {
 
 
 /**
-* Checks if specified fields exist on the current form and displays warnings for missing fields
+ * Checks if specified fields exist on the current form and displays warnings for missing fields
  * @param {object} executionContext - The form execution context
- * @param {string[]} fieldNames - Array of field schema names to check
- * @param {string} entityName - Name of the entity/table being checked (for display purposes)
+ * @param {object} fieldMapping - Object mapping field schema names to display names
+ * @param {string} entityDisplayName - Display name of the entity
+ * @param {string} contextMessage - Optional additional context message explaining why fields are important
  * @param {boolean} blockSave - Whether to prevent form save if fields are missing (default: false)
  * @returns {boolean} - Returns true if any fields are missing, false if all exist
  */
-
-function checkRequiredFieldsExist(executionContext, fieldNames, entityName, blockSave = false) {
-    console.log("🔍 checkRequiredFieldsExist triggered!");
-    console.log("📋 Checking fields:", fieldNames);
-    console.log("📊 Entity:", entityName);
+function checkRequiredFieldsExist(executionContext, fieldMapping, entityDisplayName, contextMessage, blockSave = false) {
+    console.log("Checking field existence for:", entityDisplayName);
+    console.log("Fields to check:", Object.keys(fieldMapping));
 
     var formContext = executionContext.getFormContext();
     if (!formContext) {
-        console.error("❌ Form context not found!");
+        console.error("Form context not found!");
         return false;
     }
 
+    if (typeof fieldMapping !== 'object' || fieldMapping === null) {
+        console.error("Invalid fieldMapping parameter. Must be an object.");
+        return false;
+    }
+
+    var fieldsToCheck = Object.keys(fieldMapping);
     var missingFields = [];
     var missingAttributes = [];
     var missingControls = [];
 
     // Check each field
-    fieldNames.forEach(function(fieldName) {
-        console.log("🔍 Checking field: " + fieldName);
+    fieldsToCheck.forEach(function(fieldName) {
+        console.log("Checking field: " + fieldName + " (" + fieldMapping[fieldName] + ")");
         
         var attribute = formContext.getAttribute(fieldName);
         var control = formContext.getControl(fieldName);
         
         if (!attribute) {
-            console.warn("⚠️ Attribute missing: " + fieldName);
+            console.warn("Attribute missing: " + fieldName);
             missingAttributes.push(fieldName);
             missingFields.push(fieldName);
         }
         
         if (!control) {
-            console.warn("⚠️ Control missing: " + fieldName);
+            console.warn("Control missing: " + fieldName);
             missingControls.push(fieldName);
             if (missingFields.indexOf(fieldName) === -1) {
                 missingFields.push(fieldName);
@@ -2389,40 +2396,47 @@ function checkRequiredFieldsExist(executionContext, fieldNames, entityName, bloc
         }
         
         if (attribute && control) {
-            console.log("✅ Field exists: " + fieldName);
+            console.log("Field exists: " + fieldName + " (" + fieldMapping[fieldName] + ")");
         }
     });
 
     // If any fields are missing, show warning
     if (missingFields.length > 0) {
-        console.error("❌ Missing fields detected:", missingFields);
+        console.error("Missing fields detected:", missingFields);
 
-        // Create detailed warning message
-        var warningMessage = "⚠️ MISSING FIELD ALERT!\n\n" +
-            "The following required fields are missing from the " + entityName + " form:\n\n";
+        // Create detailed warning message using display names
+        var warningMessage = "MISSING FIELD ALERT!\n\n" +
+            "The following required fields are missing from the " + entityDisplayName + " form:\n" + contextMessage + "\n\n";
 
-        missingFields.forEach(function(field, index) {
-            warningMessage += "• " + field;
+        missingFields.forEach(function(field) {
+            var displayName = fieldMapping[field];
+            warningMessage += "• " + displayName + " (" + field + ")";
+            
+            // Show what's missing
             if (missingAttributes.indexOf(field) !== -1 && missingControls.indexOf(field) !== -1) {
-                warningMessage += " (Attribute & Control missing)";
+                warningMessage += " - Attribute & Control missing";
             } else if (missingAttributes.indexOf(field) !== -1) {
-                warningMessage += " (Attribute missing)";
+                warningMessage += " - Attribute missing";
             } else if (missingControls.indexOf(field) !== -1) {
-                warningMessage += " (Control missing)";
+                warningMessage += " - Control missing";
             }
             warningMessage += "\n";
         });
 
-        warningMessage += "\n📋 Fields Found: " + (fieldNames.length - missingFields.length) + "/" + fieldNames.length + "\n";
-        warningMessage += "❌ Fields Missing: " + missingFields.length + "\n\n";
-        warningMessage += "🛠️ Please contact your system administrator to add these fields to the form.";
+        warningMessage += "\nFields Found: " + (fieldsToCheck.length - missingFields.length) + "/" + fieldsToCheck.length + "\n";
+        warningMessage += "Fields Missing: " + missingFields.length + "\n\n";
+        warningMessage += "Please contact your system administrator to add these fields to the " + entityDisplayName + " form.";
 
         // Show alert popup
         alert(warningMessage);
 
-        // Show form notification
-        var notificationMessage = "❌ Missing Fields: " + missingFields.join(", ") + 
-            " (" + missingFields.length + "/" + fieldNames.length + " fields missing from " + entityName + " form)";
+        // Show form notification using display names
+        var missingDisplayNames = missingFields.map(function(field) {
+            return fieldMapping[field];
+        });
+        
+        var notificationMessage = "Missing Fields: " + missingDisplayNames.join(", ") + 
+            " (" + missingFields.length + "/" + fieldsToCheck.length + " fields missing from " + entityDisplayName + " form)";
         
         formContext.ui.setFormNotification(
             notificationMessage,
@@ -2432,13 +2446,13 @@ function checkRequiredFieldsExist(executionContext, fieldNames, entityName, bloc
 
         // Block save if requested
         if (blockSave && executionContext.getEventArgs) {
-            console.log("🚫 Blocking save due to missing fields");
+            console.log("Blocking save due to missing fields");
             executionContext.getEventArgs().preventDefault();
         }
 
         return true; // Fields are missing
     } else {
-        console.log("✅ All fields exist on the form");
+        console.log("All fields exist on the form");
         
         // Clear any previous missing field notifications
         formContext.ui.clearFormNotification("missingFieldsError");
@@ -2450,26 +2464,90 @@ function checkRequiredFieldsExist(executionContext, fieldNames, entityName, bloc
 /**
  * Wrapper function specifically for OnSave events that blocks save when fields are missing
  * @param {object} executionContext - The form execution context
- * @param {string[]} fieldNames - Array of field schema names to check
- * @param {string} entityName - Name of the entity/table being checked
+ * @param {object} fieldMapping - Object mapping field schema names to display names
+ * @param {string} entityDisplayName - Display name of the entity
  */
-function checkRequiredFieldsOnSave(executionContext, fieldNames, entityName) {
-    console.log("💾 checkRequiredFieldsOnSave triggered - blocking save if fields missing");
-    return checkRequiredFieldsExist(executionContext, fieldNames, entityName, true);
+function checkRequiredFieldsOnSave(executionContext, fieldMapping, entityDisplayName) {
+    console.log("Checking required fields on save - will block if fields missing");
+    return checkRequiredFieldsExist(executionContext, fieldMapping, entityDisplayName, true);
 }
 
 /**
  * Wrapper function for OnLoad events that just shows warnings without blocking
  * @param {object} executionContext - The form execution context
- * @param {string[]} fieldNames - Array of field schema names to check
- * @param {string} entityName - Name of the entity/table being checked
+ * @param {object} fieldMapping - Object mapping field schema names to display names
+ * @param {string} entityDisplayName - Display name of the entity
  */
-function checkRequiredFieldsOnLoad(executionContext, fieldNames, entityName) {
-    console.log("📋 checkRequiredFieldsOnLoad triggered - warning only, no save blocking");
-    return checkRequiredFieldsExist(executionContext, fieldNames, entityName, false);
+function checkRequiredFieldsOnLoad(executionContext, fieldMapping, entityDisplayName) {
+    console.log("Checking required fields on load - warning only, no save blocking");
+    return checkRequiredFieldsExist(executionContext, fieldMapping, entityDisplayName, false);
 }
 
+// Example usage functions:
 
+/**
+ * Example: Check Assessment form fields
+ */
+function checkAssessmentFields(executionContext) {
+    var requiredFields = {
+        "cp_client": "Client",
+        "cp_firstname": "First Name", 
+        "cp_lastname": "Last Name",
+        "cp_dateofbirth": "Date of Birth",
+        "cp_outcome": "Assessment Outcome",
+        "cp_assessmentdateandtime": "Assessment Date & Time"
+    };
+    
+    return checkRequiredFieldsOnLoad(executionContext, requiredFields, "Assessment");
+}
+
+/**
+ * Example: Check Admission form fields on save
+ */
+function checkAdmissionFieldsOnSave(executionContext) {
+    var requiredFields = {
+        "cp_client": "Client",
+        "cp_assessment": "Related Assessment", 
+        "cp_admissiondatetime": "Admission Date & Time",
+        "cp_admissionstatus": "Admission Status"
+    };
+    
+    return checkRequiredFieldsOnSave(executionContext, requiredFields, "Admission");
+}
+
+/**
+ * Example: Check Intake form fields
+ */
+function checkIntakeFields(executionContext) {
+    var requiredFields = {
+        "ahb_client": "Client",
+        "ahb_referral": "Referral",
+        "ahb_intakelocation": "Intake Location"
+    };
+    
+    return checkRequiredFieldsOnLoad(executionContext, requiredFields, "Intake");
+}
+
+/**
+ * Example: Comprehensive field check for Detox Assessment
+ */
+function checkDetoxAssessmentFields(executionContext) {
+    var requiredFields = {
+        "cp_client": "Client",
+        "cp_firstname": "First Name",
+        "cp_lastname": "Last Name",
+        "cp_dateofbirth": "Date of Birth",
+        "cp_gender": "Gender",
+        "cp_ethnicity": "Ethnicity",
+        "cp_program": "Program",
+        "cp_assessmentmethod": "Assessment Method",
+        "cp_outcome": "Assessment Outcome",
+        "cp_pseudoname": "Pseudo Name",
+        "cp_postalcode": "Postal Code"
+    };
+    
+    return checkRequiredFieldsOnSave(executionContext, requiredFields, "Detox Assessment");
+}
 
 // Simple synchronous orchestrator function for OnSave event
 function assessmentSaveOrchestrator(executionContext) {
@@ -2542,5 +2620,3 @@ function assessmentSaveOrchestrator(executionContext) {
 
 
 
-
-//NEW COMMENT
