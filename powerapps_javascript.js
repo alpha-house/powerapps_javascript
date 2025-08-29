@@ -2513,6 +2513,8 @@ async function checkRelatedEntityData(
   blockSave = false
 ) {
   const formContext = executionContext.getFormContext();
+  console.log("checkRelatedEntityData triggered for", targetEntityName);
+
   if (!formContext) {
     console.error("Form context not found");
     return false;
