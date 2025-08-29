@@ -2347,273 +2347,314 @@ function checkDuplicateAssessmentSync(executionContext) {
 
 /**
  * Checks if specified fields have data on the current form and displays warnings for missing data
- * @param {object} executionContext - The form execution context
- * @param {object} fieldMapping - Object mapping field schema names to display names
- * @param {string} entityDisplayName - Display name of the entity
- * @param {string} contextMessage - Optional additional context message explaining why fields are important
- * @param {boolean} blockSave - Whether to prevent form save if fields are missing data (default: false)
- * @returns {boolean} - Returns true if any fields are missing data, false if all have data
+ * @param {object}  executionContext  - Form execution context
+ * @param {string}  dialogTitle       - Dialog title (supports \n via escaping)
+ * @param {object|string} fieldMapping- Object (or JSON string) mapping field schema names -> display names
+ * @param {string}  entityDisplayName - Display name of the entity
+ * @param {string}  contextMessage    - Optional additional context (supports \n via escaping)
+ * @param {boolean} blockSave         - Prevent save if fields are missing (default: false)
+ * @returns {Promise<boolean>}        - true if any fields are missing data; false otherwise
  */
-function checkRequiredFieldsHaveData(executionContext, fieldMapping, entityDisplayName, contextMessage, blockSave = false) {
-    console.log("Checking field data for:", entityDisplayName);
-    console.log("Fields to check:", Object.keys(fieldMapping));
+async function checkRequiredFieldsHaveData(
+  executionContext,
+  dialogTitle,
+  fieldMapping,
+  entityDisplayName,
+  contextMessage,
+  blockSave = false
+) {
+  const formContext = executionContext.getFormContext();
+  if (!formContext) {
+    console.error("Form context not found!");
+    return false;
+  }
 
-    var formContext = executionContext.getFormContext();
-    if (!formContext) {
-        console.error("Form context not found!");
-        return false;
+  // --- helpers ---
+  const notifId = "missingDataError_current";
+
+  function normalizeMsg(s) {
+    if (typeof s !== "string") return "";
+    // Convert literal \n typed in handler params into real newlines
+    return s.replace(/\\n/g, "\n").replace(/\\t/g, "\t");
+  }
+
+  function isMissing(v) {
+    if (v === null || v === undefined) return true;
+    if (Array.isArray(v)) return v.length === 0;       // lookups/multiselects on form
+    if (typeof v === "string") return v.trim() === ""; // strings
+    // numbers (0), booleans (false), Date objects are considered present if defined
+    return false;
+  }
+
+  // Parse mapping if passed as JSON string in handler box
+  if (typeof fieldMapping === "string") {
+    try { fieldMapping = JSON.parse(fieldMapping); }
+    catch (e) {
+      console.error("fieldMapping must be valid JSON", e);
+      return false;
+    }
+  }
+  if (!fieldMapping || typeof fieldMapping !== "object") {
+    console.error("Invalid fieldMapping parameter. Must be an object or JSON string.");
+    return false;
+  }
+
+  dialogTitle    = normalizeMsg(dialogTitle)    || `Missing ${entityDisplayName} Data`;
+  contextMessage = normalizeMsg(contextMessage);
+
+  const fieldsToCheck = Object.keys(fieldMapping);
+  if (fieldsToCheck.length === 0) {
+    console.warn("No fields provided in fieldMapping.");
+    return false;
+  }
+
+  // --- Save-blocking guard (prevents infinite loop on re-save) ---
+  if (blockSave) {
+    if (formContext._bypassValidation) {
+      delete formContext._bypassValidation; // allow this save to proceed
+      return false;
+    }
+    const args = executionContext.getEventArgs && executionContext.getEventArgs();
+    if (args && typeof args.preventDefault === "function") {
+      args.preventDefault(); // stop current save while we validate
+    }
+  }
+
+  // Check fields on the current form
+  const missingDataFields = [];
+  const missingFieldsOnForm = [];
+
+  for (const fieldName of fieldsToCheck) {
+    const display = fieldMapping[fieldName] || fieldName;
+    const attribute = formContext.getAttribute(fieldName);
+
+    if (!attribute) {
+      console.warn("Field not found on form:", fieldName);
+      missingFieldsOnForm.push(display);
+      continue;
     }
 
-    if (typeof fieldMapping !== 'object' || fieldMapping === null) {
-        console.error("Invalid fieldMapping parameter. Must be an object.");
-        return false;
-    }
-
-    var fieldsToCheck = Object.keys(fieldMapping);
-    var missingDataFields = [];
-    var missingFields = [];
-
-    // Check each field
-    fieldsToCheck.forEach(function(fieldName) {
-        console.log("Checking field: " + fieldName + " (" + fieldMapping[fieldName] + ")");
-        
-        var attribute = formContext.getAttribute(fieldName);
-        
-        if (!attribute) {
-            console.warn("Field not found on form: " + fieldName);
-            missingFields.push(fieldName);
-        } else {
-            var fieldValue = attribute.getValue();
-            
-            // Check if field has data (null, undefined, empty string, or empty array)
-            if (fieldValue === null || fieldValue === undefined || fieldValue === "" || 
-                (Array.isArray(fieldValue) && fieldValue.length === 0)) {
-                console.warn("Field missing data: " + fieldName);
-                missingDataFields.push(fieldName);
-            } else {
-                console.log("Field has data: " + fieldName + " = " + JSON.stringify(fieldValue));
-            }
-        }
-    });
-
-    // If any fields are missing from form, show error
-    if (missingFields.length > 0) {
-        console.error("Fields not found on form:", missingFields);
-        alert("Configuration Error: The following fields do not exist on the " + entityDisplayName + " form: " + 
-              missingFields.map(function(f) { return fieldMapping[f]; }).join(", "));
-        return false;
-    }
-
-    // If any fields are missing data, show warning
-    if (missingDataFields.length > 0) {
-        console.error("Missing data detected:", missingDataFields);
-
-        // Create warning message using display names only
-        var warningMessage = "⚠️ WARNING: IMPORTANT DATA IS MISSING!\n\n" +
-            "The following required fields are missing data on the " + entityDisplayName + " form:\\nn";
-
-       
-
-        missingDataFields.forEach(function(field) {
-            var displayName = fieldMapping[field];
-            warningMessage += "• " + displayName + "\n";
-        });
-
-        warningMessage += "\nFields with Data: " + (fieldsToCheck.length - missingDataFields.length) + "/" + fieldsToCheck.length + "\n";
-        warningMessage += "Fields Missing Data: " + missingDataFields.length + "\n\n";
-
-         // Add optional context message if provided
-        if (contextMessage) {
-            warningMessage += contextMessage + "\n\n";
-        } else {
-            warningMessage += "\n";
-        }
-
-        warningMessage += "Please ensure that required " + entityDisplayName + " data fields are complete.";
-
-        // Show alert popup
-        alert(warningMessage);
-
-        // Show form notification using display names only
-        var missingDisplayNames = missingDataFields.map(function(field) {
-            return fieldMapping[field];
-        });
-        
-        var notificationMessage = "Missing Data: " + missingDisplayNames.join(", ") + 
-            " (" + missingDataFields.length + "/" + fieldsToCheck.length + " fields missing data on " + entityDisplayName + " form)";
-        
-        formContext.ui.setFormNotification(
-            notificationMessage,
-            "ERROR",
-            "missingDataError"
-        );
-
-        // Block save if requested
-        if (blockSave && executionContext.getEventArgs) {
-            console.log("Blocking save due to missing data");
-            executionContext.getEventArgs().preventDefault();
-        }
-
-        return true; // Data is missing
+    const value = attribute.getValue();
+    if (isMissing(value)) {
+      console.warn("Field missing data:", fieldName);
+      missingDataFields.push(display);
     } else {
-        console.log("All fields have data on the form");
-        
-        // Clear any previous missing data notifications
-        formContext.ui.clearFormNotification("missingDataError");
-        
-        return false; // No data missing
+      // console.log("Field has data:", fieldName, value);
     }
+  }
+
+  // Clear any prior notifications before setting new ones
+  formContext.ui.clearFormNotification(notifId);
+
+  // Configuration error: fields not present on form
+  if (missingFieldsOnForm.length > 0) {
+    const msg =
+      `The following fields do not exist on the ${entityDisplayName} form:\n\n` +
+      missingFieldsOnForm.map(d => `• ${d}`).join("\n") +
+      `\n\nPlease contact your system administrator.`;
+
+    await Xrm.Navigation.openAlertDialog({ title: `${entityDisplayName} Form Configuration`, text: msg }, { width: 520 });
+    // Do not attempt to auto-save on config errors
+    return true; // treat as failing validation
+  }
+
+  // Missing data warning
+  if (missingDataFields.length > 0) {
+    let warningMessage =
+      `The following required fields are missing data on the ${entityDisplayName} form:\n\n` +
+      missingDataFields.map(d => `• ${d}`).join("\n") +
+      `\n\nFields with Data: ${fieldsToCheck.length - missingDataFields.length}/${fieldsToCheck.length}` +
+      `\nFields Missing Data: ${missingDataFields.length}`;
+
+    if (contextMessage) warningMessage += `\n\n${contextMessage}`;
+
+    await Xrm.Navigation.openAlertDialog({ title: dialogTitle, text: warningMessage }, { width: 520 });
+
+    // Compact banner (single-line)
+    formContext.ui.setFormNotification(
+      `Missing Data: ${missingDataFields.join(", ")}`,
+      "ERROR",
+      notifId
+    );
+
+    // Keep save blocked (preventDefault already called above)
+    return true;
+  }
+
+  // All good — clear banner and, if we intercepted a save, re-save once
+  if (blockSave) {
+    formContext._bypassValidation = true;
+    formContext.data.entity.save();
+  }
+  return false;
 }
+
 
 /**
  * Checks if specified fields have data in a related entity record
- * @param {object} executionContext - The form execution context
- * @param {string} lookupFieldName - Schema name of the lookup field on current form
- * @param {string} targetEntityName - Schema name of the target entity to validate
- * @param {object} fieldMapping - Object mapping field schema names to display names
- * @param {string} entityDisplayName - Display name of the target entity
- * @param {string} contextMessage - Optional additional context message
- * @param {boolean} blockSave - Whether to prevent form save if fields are missing data (default: false)
- * @returns {Promise} - Promise that resolves when validation is complete
- */ 
+ * @param {object}  executionContext  Form execution context
+ * @param {string}  lookupFieldName   Schema name of the lookup field on current form
+ * @param {string}  targetEntityName  Logical name of the target entity to validate (e.g., "contact")
+ * @param {object|string} fieldMapping Object (or JSON string) mapping field schema names -> display names
+ * @param {string}  entityDisplayName Display name of the target entity (e.g., "Client")
+ * @param {string}  dialogTitle       Optional dialog title (supports \n via escaping)
+ * @param {string}  contextMessage    Optional extra message (supports \n via escaping)
+ * @param {boolean} blockSave         If true, prevent save when data missing and enforce before-save validation
+ * @returns {Promise<boolean>}        Resolves true if data missing, false if all present or validation skipped
+ */
+async function checkRelatedEntityData(
+  executionContext,
+  lookupFieldName,
+  targetEntityName,
+  fieldMapping,
+  entityDisplayName,
+  dialogTitle = "",
+  contextMessage = "",
+  blockSave = false
+) {
+  const formContext = executionContext.getFormContext();
+  if (!formContext) {
+    console.error("Form context not found");
+    return false;
+  }
 
-function checkRelatedEntityData(executionContext, lookupFieldName, targetEntityName, fieldMapping, entityDisplayName, contextMessage, blockSave = false) {
-    console.log("Checking related entity data for:", entityDisplayName);
-    console.log("Fields to check:", Object.keys(fieldMapping));
+  // Helper: turn literal "\n" typed in handler params into real newlines
+  function normalizeMsg(s) {
+    if (typeof s !== "string") return "";
+    return s.replace(/\\n/g, "\n").replace(/\\t/g, "\t");
+  }
 
-    var formContext = executionContext.getFormContext();
-    if (!formContext) {
-        console.error("Form context not found!");
-        return Promise.resolve(false);
+  // Parse mapping if it arrived as a JSON string from the handler box
+  if (typeof fieldMapping === "string") {
+    try { fieldMapping = JSON.parse(fieldMapping); }
+    catch (e) {
+      console.error("fieldMapping must be valid JSON", e);
+      return false;
+    }
+  }
+
+  if (!fieldMapping || typeof fieldMapping !== "object") {
+    console.error("Invalid fieldMapping parameter. Must be an object or JSON string.");
+    return false;
+  }
+
+  const fieldsToCheck = Object.keys(fieldMapping);
+  if (fieldsToCheck.length === 0) {
+    console.warn("No fields provided in fieldMapping.");
+    return false;
+  }
+
+  dialogTitle = normalizeMsg(dialogTitle);
+  contextMessage = normalizeMsg(contextMessage);
+
+  // Lookup value
+  const lookupAttr = formContext.getAttribute(lookupFieldName);
+  if (!lookupAttr) {
+    console.error("Lookup field not found:", lookupFieldName);
+    return false;
+  }
+  const lookupValue = lookupAttr.getValue();
+  if (!lookupValue || lookupValue.length === 0) {
+    console.warn("No related record selected in lookup:", lookupFieldName);
+    return false;
+  }
+  const recordId = (lookupValue[0].id || "").replace(/[{}]/g, "");
+
+  // --- Save-blocking guard (prevents infinite loop on re-save) ---
+  if (blockSave) {
+    // If we're in the re-save pass, consume the bypass flag and allow save
+    if (formContext._bypassValidation) {
+      delete formContext._bypassValidation;
+      return false;
+    }
+    const args = executionContext.getEventArgs && executionContext.getEventArgs();
+    if (args && typeof args.preventDefault === "function") {
+      args.preventDefault(); // stop the current save while we validate asynchronously
+    }
+  }
+
+  // Build select list for retrieveRecord
+  const select = fieldsToCheck.join(",");
+  const query = select ? `?$select=${select}` : "";
+
+  // Helpers to read values and to decide “missing”
+  const getValue = (rec, name) =>
+    rec[name] !== undefined ? rec[name] : rec["_" + name + "_value"]; // lookup raw GUID is _name_value
+
+  const isMissing = (v) => {
+    if (v === null || v === undefined) return true;
+    if (Array.isArray(v)) return v.length === 0;  // multi-selects
+    if (typeof v === "string") return v.trim() === "";
+    // numbers, booleans, dates -> considered present if defined
+    return false;
+  };
+
+  const notifId = "missingDataError_" + targetEntityName;
+
+  try {
+    const record = await Xrm.WebApi.retrieveRecord(targetEntityName, recordId, query);
+
+    const missingFields = [];
+    for (const fieldName of fieldsToCheck) {
+      const val = getValue(record, fieldName);
+      if (isMissing(val)) missingFields.push(fieldName);
     }
 
-    if (typeof fieldMapping !== 'object' || fieldMapping === null) {
-        console.error("Invalid fieldMapping parameter. Must be an object.");
-        return Promise.resolve(false);
+    // Clear any old notification before setting a new one
+    formContext.ui.clearFormNotification(notifId);
+
+    if (missingFields.length > 0) {
+      const missingDisplayNames = missingFields.map((f) => fieldMapping[f] || f);
+
+      // Compose multi-line dialog text
+      let warningMessage =
+        "The following required fields are missing data in the " + entityDisplayName + " record:\n\n" +
+        missingDisplayNames.map((d) => "• " + d).join("\n") +
+        `\n\nFields with Data: ${fieldsToCheck.length - missingFields.length}/${fieldsToCheck.length}` +
+        `\nFields Missing Data: ${missingFields.length}\n`;
+
+      if (contextMessage) warningMessage += "\n" + contextMessage;
+
+      // UCI-styled dialog (respects \n)
+      await Xrm.Navigation.openAlertDialog(
+        { title: dialogTitle || `Missing ${entityDisplayName} Data`, text: warningMessage },
+        { width: 520 }
+      );
+
+      // Compact, single-line banner
+      formContext.ui.setFormNotification(
+        `Missing Data: ${missingDisplayNames.join(", ")}`,
+        "ERROR",
+        notifId
+      );
+
+      // Keep save blocked (we already prevented default above)
+      return true; // data missing
     }
 
-    // Get the lookup field value
-    var lookupAttribute = formContext.getAttribute(lookupFieldName);
-    if (!lookupAttribute) {
-        console.error("Lookup field not found:", lookupFieldName);
-        return Promise.resolve(false);
+    // All good: clear banner and, if we intercepted a save, re-save once
+    if (blockSave) {
+      formContext._bypassValidation = true; // allow the next save to pass without re-blocking
+      formContext.data.entity.save();
     }
+    return false; // no data missing
+  } catch (error) {
+    console.error("Error retrieving related record:", error && error.message ? error.message : error);
 
-    var lookupValue = lookupAttribute.getValue();
-    if (!lookupValue || lookupValue.length === 0) {
-        console.warn("No related record selected in lookup:", lookupFieldName);
-        return Promise.resolve(false);
-    }
-
-    var recordId = lookupValue[0].id.replace(/[{}]/g, "");
-    console.log("Validating record ID:", recordId);
-
-    // Block save initially if requested
-    if (blockSave && executionContext.getEventArgs) {
-        executionContext.getEventArgs().preventDefault();
-    }
-
-    // Build query to retrieve the related record
-    var fieldsToCheck = Object.keys(fieldMapping);
-    var query = "?$select=" + fieldsToCheck.join(",");
-
-    return Xrm.WebApi.retrieveRecord(targetEntityName, recordId, query).then(
-        function(record) {
-            console.log("Related record retrieved:", record);
-
-            var missingFields = [];
-
-            // Check each field for missing data
-            fieldsToCheck.forEach(function(fieldName) {
-                console.log("Checking field: " + fieldName + " (" + fieldMapping[fieldName] + ")");
-                
-                var fieldValue = record[fieldName];
-                
-                if (fieldValue === null || fieldValue === undefined || fieldValue === "") {
-                    console.warn("Field missing data: " + fieldName);
-                    missingFields.push(fieldName);
-                } else {
-                    console.log("Field has data: " + fieldName + " = " + fieldValue);
-                }
-            });
-
-            // If any fields are missing data, show warning
-            if (missingFields.length > 0) {
-                console.error("Missing data detected:", missingFields);
-
-                // Create warning message using display names only
-                var warningMessage = "⚠️ WARNING: IMPORTANT DATA IS MISSING!\n\n" +
-                    "The following required fields are missing data in the " + entityDisplayName + " record:\n";
-            
-
-                missingFields.forEach(function(field) {
-                    var displayName = fieldMapping[field];
-                    warningMessage += "• " + displayName + "\n";
-                });
-
-                warningMessage += "\nFields with Data: " + (fieldsToCheck.length - missingFields.length) + "/" + fieldsToCheck.length + "\n";
-                warningMessage += "Fields Missing Data: " + missingFields.length + "\n\n";
-
-                    // Add optional context message if provided
-                if (contextMessage) {
-                    warningMessage += contextMessage + "\n\n";
-                } else {
-                    warningMessage += "\n";
-                }
-                warningMessage += "Please ensure that required " + entityDisplayName + " data fields are complete.";
-
-                // Show alert popup
-                alert(warningMessage);
-
-                // Show form notification using display names only
-                var missingDisplayNames = missingFields.map(function(field) {
-                    return fieldMapping[field];
-                });
-                
-                var notificationMessage = "Missing Data: " + missingDisplayNames.join(", ") + 
-                    " (" + missingFields.length + "/" + fieldsToCheck.length + " fields missing data in " + entityDisplayName + " record)";
-                
-                formContext.ui.setFormNotification(
-                    notificationMessage,
-                    "ERROR",
-                    "missingDataError_" + targetEntityName
-                );
-
-                // Handle save blocking
-                if (blockSave) {
-                    console.log("Save blocked due to missing data");
-                    // Save remains blocked from preventDefault above
-                } else {
-                    console.log("Warning shown but save not blocked");
-                }
-
-                return true; // Data is missing
-            } else {
-                console.log("All required data present in related record");
-                
-                // Clear any previous missing data notifications for this entity
-                formContext.ui.clearFormNotification("missingDataError_" + targetEntityName);
-                
-                // If we blocked save initially but all data is present, proceed with save
-                if (blockSave) {
-                    formContext._bypassValidation = true;
-                    formContext.data.entity.save();
-                }
-                
-                return false; // No data missing
-            }
-        }
-    ).catch(function(error) {
-        console.error("Error retrieving related record:", error.message);
-        
-        // On error, allow save to proceed if it was blocked
-        if (blockSave) {
-            formContext._bypassValidation = true;
-            formContext.data.entity.save();
-        }
-        
-        return false;
+    // Show a clear error and keep save blocked (safer default)
+    await Xrm.Navigation.openAlertDialog({
+      title: dialogTitle || `Validation Error — ${entityDisplayName}`,
+      text: `Could not validate ${entityDisplayName} data. Please try again.\n\nDetails: ${error.message || error}`
     });
+
+    formContext.ui.setFormNotification(
+      `Could not validate ${entityDisplayName} data. Try again.`,
+      "ERROR",
+      notifId
+    );
+
+    return false; // treat as not validated; do not auto-save on error
+  }
 }
 
 
