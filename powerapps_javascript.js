@@ -2346,16 +2346,16 @@ function checkDuplicateAssessmentSync(executionContext) {
 
 
 /**
- * Checks if specified fields exist on the current form and displays warnings for missing fields
+ * Checks if specified fields have data on the current form and displays warnings for missing data
  * @param {object} executionContext - The form execution context
  * @param {object} fieldMapping - Object mapping field schema names to display names
  * @param {string} entityDisplayName - Display name of the entity
  * @param {string} contextMessage - Optional additional context message explaining why fields are important
- * @param {boolean} blockSave - Whether to prevent form save if fields are missing (default: false)
- * @returns {boolean} - Returns true if any fields are missing, false if all exist
+ * @param {boolean} blockSave - Whether to prevent form save if fields are missing data (default: false)
+ * @returns {boolean} - Returns true if any fields are missing data, false if all have data
  */
-function checkRequiredFieldsExist(executionContext, fieldMapping, entityDisplayName, contextMessage, blockSave = false) {
-    console.log("Checking field existence for:", entityDisplayName);
+function checkRequiredFieldsHaveData(executionContext, fieldMapping, entityDisplayName, contextMessage, blockSave = false) {
+    console.log("Checking field data for:", entityDisplayName);
     console.log("Fields to check:", Object.keys(fieldMapping));
 
     var formContext = executionContext.getFormContext();
@@ -2370,184 +2370,254 @@ function checkRequiredFieldsExist(executionContext, fieldMapping, entityDisplayN
     }
 
     var fieldsToCheck = Object.keys(fieldMapping);
+    var missingDataFields = [];
     var missingFields = [];
-    var missingAttributes = [];
-    var missingControls = [];
 
     // Check each field
     fieldsToCheck.forEach(function(fieldName) {
         console.log("Checking field: " + fieldName + " (" + fieldMapping[fieldName] + ")");
         
         var attribute = formContext.getAttribute(fieldName);
-        var control = formContext.getControl(fieldName);
         
         if (!attribute) {
-            console.warn("Attribute missing: " + fieldName);
-            missingAttributes.push(fieldName);
+            console.warn("Field not found on form: " + fieldName);
             missingFields.push(fieldName);
-        }
-        
-        if (!control) {
-            console.warn("Control missing: " + fieldName);
-            missingControls.push(fieldName);
-            if (missingFields.indexOf(fieldName) === -1) {
-                missingFields.push(fieldName);
+        } else {
+            var fieldValue = attribute.getValue();
+            
+            // Check if field has data (null, undefined, empty string, or empty array)
+            if (fieldValue === null || fieldValue === undefined || fieldValue === "" || 
+                (Array.isArray(fieldValue) && fieldValue.length === 0)) {
+                console.warn("Field missing data: " + fieldName);
+                missingDataFields.push(fieldName);
+            } else {
+                console.log("Field has data: " + fieldName + " = " + JSON.stringify(fieldValue));
             }
-        }
-        
-        if (attribute && control) {
-            console.log("Field exists: " + fieldName + " (" + fieldMapping[fieldName] + ")");
         }
     });
 
-    // If any fields are missing, show warning
+    // If any fields are missing from form, show error
     if (missingFields.length > 0) {
-        console.error("Missing fields detected:", missingFields);
+        console.error("Fields not found on form:", missingFields);
+        alert("Configuration Error: The following fields do not exist on the " + entityDisplayName + " form: " + 
+              missingFields.map(function(f) { return fieldMapping[f]; }).join(", "));
+        return false;
+    }
 
-        // Create detailed warning message using display names
-        var warningMessage = "MISSING FIELD ALERT!\n\n" +
-            "The following required fields are missing from the " + entityDisplayName + " form:\n" + contextMessage + "\n\n";
+    // If any fields are missing data, show warning
+    if (missingDataFields.length > 0) {
+        console.error("Missing data detected:", missingDataFields);
 
-        missingFields.forEach(function(field) {
+        // Create warning message using display names only
+        var warningMessage = "⚠️ WARNING: IMPORTANT DATA IS MISSING!\n\n" +
+            "The following required fields are missing data on the " + entityDisplayName + " form:\\nn";
+
+       
+
+        missingDataFields.forEach(function(field) {
             var displayName = fieldMapping[field];
-            warningMessage += "• " + displayName + " (" + field + ")";
-            
-            // Show what's missing
-            if (missingAttributes.indexOf(field) !== -1 && missingControls.indexOf(field) !== -1) {
-                warningMessage += " - Attribute & Control missing";
-            } else if (missingAttributes.indexOf(field) !== -1) {
-                warningMessage += " - Attribute missing";
-            } else if (missingControls.indexOf(field) !== -1) {
-                warningMessage += " - Control missing";
-            }
-            warningMessage += "\n";
+            warningMessage += "• " + displayName + "\n";
         });
 
-        warningMessage += "\nFields Found: " + (fieldsToCheck.length - missingFields.length) + "/" + fieldsToCheck.length + "\n";
-        warningMessage += "Fields Missing: " + missingFields.length + "\n\n";
-        warningMessage += "Please contact your system administrator to add these fields to the " + entityDisplayName + " form.";
+        warningMessage += "\nFields with Data: " + (fieldsToCheck.length - missingDataFields.length) + "/" + fieldsToCheck.length + "\n";
+        warningMessage += "Fields Missing Data: " + missingDataFields.length + "\n\n";
+
+         // Add optional context message if provided
+        if (contextMessage) {
+            warningMessage += contextMessage + "\n\n";
+        } else {
+            warningMessage += "\n";
+        }
+
+        warningMessage += "Please ensure that required " + entityDisplayName + " data fields are complete.";
 
         // Show alert popup
         alert(warningMessage);
 
-        // Show form notification using display names
-        var missingDisplayNames = missingFields.map(function(field) {
+        // Show form notification using display names only
+        var missingDisplayNames = missingDataFields.map(function(field) {
             return fieldMapping[field];
         });
         
-        var notificationMessage = "Missing Fields: " + missingDisplayNames.join(", ") + 
-            " (" + missingFields.length + "/" + fieldsToCheck.length + " fields missing from " + entityDisplayName + " form)";
+        var notificationMessage = "Missing Data: " + missingDisplayNames.join(", ") + 
+            " (" + missingDataFields.length + "/" + fieldsToCheck.length + " fields missing data on " + entityDisplayName + " form)";
         
         formContext.ui.setFormNotification(
             notificationMessage,
             "ERROR",
-            "missingFieldsError"
+            "missingDataError"
         );
 
         // Block save if requested
         if (blockSave && executionContext.getEventArgs) {
-            console.log("Blocking save due to missing fields");
+            console.log("Blocking save due to missing data");
             executionContext.getEventArgs().preventDefault();
         }
 
-        return true; // Fields are missing
+        return true; // Data is missing
     } else {
-        console.log("All fields exist on the form");
+        console.log("All fields have data on the form");
         
-        // Clear any previous missing field notifications
-        formContext.ui.clearFormNotification("missingFieldsError");
+        // Clear any previous missing data notifications
+        formContext.ui.clearFormNotification("missingDataError");
         
-        return false; // No fields missing
+        return false; // No data missing
     }
 }
 
 /**
- * Wrapper function specifically for OnSave events that blocks save when fields are missing
+ * Checks if specified fields have data in a related entity record
  * @param {object} executionContext - The form execution context
+ * @param {string} lookupFieldName - Schema name of the lookup field on current form
+ * @param {string} targetEntityName - Schema name of the target entity to validate
  * @param {object} fieldMapping - Object mapping field schema names to display names
- * @param {string} entityDisplayName - Display name of the entity
- */
-function checkRequiredFieldsOnSave(executionContext, fieldMapping, entityDisplayName) {
-    console.log("Checking required fields on save - will block if fields missing");
-    return checkRequiredFieldsExist(executionContext, fieldMapping, entityDisplayName, true);
+ * @param {string} entityDisplayName - Display name of the target entity
+ * @param {string} contextMessage - Optional additional context message
+ * @param {boolean} blockSave - Whether to prevent form save if fields are missing data (default: false)
+ * @returns {Promise} - Promise that resolves when validation is complete
+ */ 
+
+function checkRelatedEntityData(executionContext, lookupFieldName, targetEntityName, fieldMapping, entityDisplayName, contextMessage, blockSave = false) {
+    console.log("Checking related entity data for:", entityDisplayName);
+    console.log("Fields to check:", Object.keys(fieldMapping));
+
+    var formContext = executionContext.getFormContext();
+    if (!formContext) {
+        console.error("Form context not found!");
+        return Promise.resolve(false);
+    }
+
+    if (typeof fieldMapping !== 'object' || fieldMapping === null) {
+        console.error("Invalid fieldMapping parameter. Must be an object.");
+        return Promise.resolve(false);
+    }
+
+    // Get the lookup field value
+    var lookupAttribute = formContext.getAttribute(lookupFieldName);
+    if (!lookupAttribute) {
+        console.error("Lookup field not found:", lookupFieldName);
+        return Promise.resolve(false);
+    }
+
+    var lookupValue = lookupAttribute.getValue();
+    if (!lookupValue || lookupValue.length === 0) {
+        console.warn("No related record selected in lookup:", lookupFieldName);
+        return Promise.resolve(false);
+    }
+
+    var recordId = lookupValue[0].id.replace(/[{}]/g, "");
+    console.log("Validating record ID:", recordId);
+
+    // Block save initially if requested
+    if (blockSave && executionContext.getEventArgs) {
+        executionContext.getEventArgs().preventDefault();
+    }
+
+    // Build query to retrieve the related record
+    var fieldsToCheck = Object.keys(fieldMapping);
+    var query = "?$select=" + fieldsToCheck.join(",");
+
+    return Xrm.WebApi.retrieveRecord(targetEntityName, recordId, query).then(
+        function(record) {
+            console.log("Related record retrieved:", record);
+
+            var missingFields = [];
+
+            // Check each field for missing data
+            fieldsToCheck.forEach(function(fieldName) {
+                console.log("Checking field: " + fieldName + " (" + fieldMapping[fieldName] + ")");
+                
+                var fieldValue = record[fieldName];
+                
+                if (fieldValue === null || fieldValue === undefined || fieldValue === "") {
+                    console.warn("Field missing data: " + fieldName);
+                    missingFields.push(fieldName);
+                } else {
+                    console.log("Field has data: " + fieldName + " = " + fieldValue);
+                }
+            });
+
+            // If any fields are missing data, show warning
+            if (missingFields.length > 0) {
+                console.error("Missing data detected:", missingFields);
+
+                // Create warning message using display names only
+                var warningMessage = "⚠️ WARNING: IMPORTANT DATA IS MISSING!\n\n" +
+                    "The following required fields are missing data in the " + entityDisplayName + " record:\n";
+            
+
+                missingFields.forEach(function(field) {
+                    var displayName = fieldMapping[field];
+                    warningMessage += "• " + displayName + "\n";
+                });
+
+                warningMessage += "\nFields with Data: " + (fieldsToCheck.length - missingFields.length) + "/" + fieldsToCheck.length + "\n";
+                warningMessage += "Fields Missing Data: " + missingFields.length + "\n\n";
+
+                    // Add optional context message if provided
+                if (contextMessage) {
+                    warningMessage += contextMessage + "\n\n";
+                } else {
+                    warningMessage += "\n";
+                }
+                warningMessage += "Please ensure that required " + entityDisplayName + " data fields are complete.";
+
+                // Show alert popup
+                alert(warningMessage);
+
+                // Show form notification using display names only
+                var missingDisplayNames = missingFields.map(function(field) {
+                    return fieldMapping[field];
+                });
+                
+                var notificationMessage = "Missing Data: " + missingDisplayNames.join(", ") + 
+                    " (" + missingFields.length + "/" + fieldsToCheck.length + " fields missing data in " + entityDisplayName + " record)";
+                
+                formContext.ui.setFormNotification(
+                    notificationMessage,
+                    "ERROR",
+                    "missingDataError_" + targetEntityName
+                );
+
+                // Handle save blocking
+                if (blockSave) {
+                    console.log("Save blocked due to missing data");
+                    // Save remains blocked from preventDefault above
+                } else {
+                    console.log("Warning shown but save not blocked");
+                }
+
+                return true; // Data is missing
+            } else {
+                console.log("All required data present in related record");
+                
+                // Clear any previous missing data notifications for this entity
+                formContext.ui.clearFormNotification("missingDataError_" + targetEntityName);
+                
+                // If we blocked save initially but all data is present, proceed with save
+                if (blockSave) {
+                    formContext._bypassValidation = true;
+                    formContext.data.entity.save();
+                }
+                
+                return false; // No data missing
+            }
+        }
+    ).catch(function(error) {
+        console.error("Error retrieving related record:", error.message);
+        
+        // On error, allow save to proceed if it was blocked
+        if (blockSave) {
+            formContext._bypassValidation = true;
+            formContext.data.entity.save();
+        }
+        
+        return false;
+    });
 }
 
-/**
- * Wrapper function for OnLoad events that just shows warnings without blocking
- * @param {object} executionContext - The form execution context
- * @param {object} fieldMapping - Object mapping field schema names to display names
- * @param {string} entityDisplayName - Display name of the entity
- */
-function checkRequiredFieldsOnLoad(executionContext, fieldMapping, entityDisplayName) {
-    console.log("Checking required fields on load - warning only, no save blocking");
-    return checkRequiredFieldsExist(executionContext, fieldMapping, entityDisplayName, false);
-}
 
-// Example usage functions:
 
-/**
- * Example: Check Assessment form fields
- */
-function checkAssessmentFields(executionContext) {
-    var requiredFields = {
-        "cp_client": "Client",
-        "cp_firstname": "First Name", 
-        "cp_lastname": "Last Name",
-        "cp_dateofbirth": "Date of Birth",
-        "cp_outcome": "Assessment Outcome",
-        "cp_assessmentdateandtime": "Assessment Date & Time"
-    };
-    
-    return checkRequiredFieldsOnLoad(executionContext, requiredFields, "Assessment");
-}
-
-/**
- * Example: Check Admission form fields on save
- */
-function checkAdmissionFieldsOnSave(executionContext) {
-    var requiredFields = {
-        "cp_client": "Client",
-        "cp_assessment": "Related Assessment", 
-        "cp_admissiondatetime": "Admission Date & Time",
-        "cp_admissionstatus": "Admission Status"
-    };
-    
-    return checkRequiredFieldsOnSave(executionContext, requiredFields, "Admission");
-}
-
-/**
- * Example: Check Intake form fields
- */
-function checkIntakeFields(executionContext) {
-    var requiredFields = {
-        "ahb_client": "Client",
-        "ahb_referral": "Referral",
-        "ahb_intakelocation": "Intake Location"
-    };
-    
-    return checkRequiredFieldsOnLoad(executionContext, requiredFields, "Intake");
-}
-
-/**
- * Example: Comprehensive field check for Detox Assessment
- */
-function checkDetoxAssessmentFields(executionContext) {
-    var requiredFields = {
-        "cp_client": "Client",
-        "cp_firstname": "First Name",
-        "cp_lastname": "Last Name",
-        "cp_dateofbirth": "Date of Birth",
-        "cp_gender": "Gender",
-        "cp_ethnicity": "Ethnicity",
-        "cp_program": "Program",
-        "cp_assessmentmethod": "Assessment Method",
-        "cp_outcome": "Assessment Outcome",
-        "cp_pseudoname": "Pseudo Name",
-        "cp_postalcode": "Postal Code"
-    };
-    
-    return checkRequiredFieldsOnSave(executionContext, requiredFields, "Detox Assessment");
-}
 
 // Simple synchronous orchestrator function for OnSave event
 function assessmentSaveOrchestrator(executionContext) {
