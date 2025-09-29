@@ -2661,6 +2661,86 @@ async function checkRelatedEntityData(
 
 
 
+/**
+ * Validate a PHN field on a Dataverse form.
+ * Shows UCI alert dialog + form banner + field notification, and can block save.
+ *
+ * @param {object}  executionContext   Form execution context
+ * @param {string}  fieldName          Schema name of the PHN field (default: "cp_ahcnumber")
+ * @param {boolean} blockSave          If true, prevent save when invalid (default: false)
+ * @param {boolean} autoFormat         If true, auto-format 9 digits to #####-#### (default: false)
+ */
+function validatePHNField(
+  executionContext,
+  fieldName = "cp_ahcnumber",
+  blockSave = false,
+  autoFormat = false
+) {
+  const formContext = executionContext.getFormContext();
+  const attr = formContext.getAttribute(fieldName);
+  const ctrl = formContext.getControl(fieldName);
+  const notifId = "phn_invalid_" + fieldName;
+
+  if (!attr || !ctrl) {
+    console.warn("PHN field not found:", fieldName);
+    return true; // treat as valid to avoid blocking accidentally
+  }
+
+  // normalize whitespace; allow user to type spaces but ignore them
+  let raw = (attr.getValue() || "").toString().trim();
+  const compact = raw.replace(/\s+/g, ""); // remove spaces for testing/formatting
+
+  // Accept either ######### OR #####-####
+  const regex = /^(\d{9}|\d{5}-\d{4})$/;
+
+  // Optional: auto-format 9 digits -> #####-####
+  if (autoFormat && /^\d{9}$/.test(compact)) {
+    const formatted = compact.replace(/(\d{5})(\d{4})/, "$1-$2");
+    if (formatted !== raw) {
+      attr.setValue(formatted);
+      raw = formatted;
+    }
+  }
+
+  // Clear prior notifications
+  ctrl.clearNotification(notifId);
+  formContext.ui.clearFormNotification(notifId);
+
+  const isValid = regex.test(raw);
+  if (isValid) return true;
+
+  // Compose messages
+  const dialogTitle = "Invalid PHN Format";
+  const dialogText =
+    "Please enter the Personal Health Number in one of the following formats:\n\n" +
+    "• 9 digits (#########)\n" +
+    "• 5 digits, a dash, 4 digits (#####-####)\n\n" +
+    "Letters are not allowed.";
+
+  // Field-level notification and focus for quick correction
+  ctrl.setNotification("Invalid PHN. Use ######### or #####-#### (numbers only).", notifId);
+  ctrl.setFocus();
+
+  // Form banner (compact)
+  formContext.ui.setFormNotification("Invalid PHN format.", "ERROR", notifId);
+
+  // UCI alert dialog
+  Xrm.Navigation.openAlertDialog({ title: dialogTitle, text: dialogText }, { width: 520 });
+
+  // Optionally block save
+  if (blockSave) {
+    const args = executionContext.getEventArgs && executionContext.getEventArgs();
+    if (args && typeof args.preventDefault === "function") {
+      args.preventDefault();
+    }
+  }
+
+  return false;
+}
+
+
+
+
 
 // Simple synchronous orchestrator function for OnSave event
 function assessmentSaveOrchestrator(executionContext) {
