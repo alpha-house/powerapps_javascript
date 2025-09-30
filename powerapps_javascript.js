@@ -2990,7 +2990,7 @@ async function checkRelatedEntityData(
   const select = fieldsToCheck.join(",");
   const query = select ? `?$select=${select}` : "";
 
-  // Helpers to read values and to decide “missing”
+  // Helpers to read values and to decide "missing"
   const getValue = (rec, name) =>
     rec[name] !== undefined ? rec[name] : rec["_" + name + "_value"]; // lookup raw GUID is _name_value
 
@@ -3022,11 +3022,9 @@ async function checkRelatedEntityData(
       // Compose multi-line dialog text
       let warningMessage =
         "The following required fields are missing data in the " + entityDisplayName + " record:\n\n" +
-        missingDisplayNames.map((d) => "• " + d).join("\n") +
-        `\n\nFields with Data: ${fieldsToCheck.length - missingFields.length}/${fieldsToCheck.length}` +
-        `\nFields Missing Data: ${missingFields.length}\n`;
+        missingDisplayNames.map((d) => "• " + d).join("\n");
 
-      if (contextMessage) warningMessage += "\n" + contextMessage;
+      if (contextMessage) warningMessage += "\n\n" + contextMessage;
 
       // UCI-styled dialog (respects \n)
       await Xrm.Navigation.openAlertDialog(
