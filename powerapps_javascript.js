@@ -1,4 +1,3 @@
-//----------------------Boreal Functions Start Here----------------------//
 /**
  * Boreal – Referral → Intake automation
  * Now handles both Approved (747630000) and
@@ -745,11 +744,32 @@ function preventAutoSave(econtext) {
 }
 
 
-//-----------------------------Boreal Functions End Here----------------------//
+function setCurrentDateTime(executionContext, attributeSchemaName) {
+  var formContext = executionContext.getFormContext();
+
+  // 1 = Create (unsaved new record), 2 = Update (already saved)
+  var formType = formContext.ui.getFormType();
+  if (formType !== 1) {
+    // Not a brand-new record: do nothing
+    return;
+  }
+
+  var name = attributeSchemaName;
+  var attr = formContext.getAttribute(name);
+  if (!attr) return;            // field missing on form
+  if (attr.getValue()) return;  // someone already set it (don’t overwrite)
+
+  // Set current date/time (user local)
+  attr.setValue(new Date());
+}
 
 
 
-//---------------------------Detox Functions Start Here----------------------//
+// ----------------------------------------------------------------------------------------------------Boreal Ends Here----------------------------------------------------------------------------------------------------
+// ----------------------------------------------------------------------------------------------------Code Block separator----------------------------------------------------------------------------------------------------
+// ----------------------------------------------------------------------------------------------------Detox Starts Here----------------------------------------------------------------------------------------------------
+// ----------------------------------------------------------------------------------------------------Code Block separator----------------------------------------------------------------------------------------------------
+
 
 function setPseudoNameIfPHN(executionContext) {
     console.log("ÃÂ°ÃÂÃÂÃÂ setPseudoName triggered!");
@@ -815,7 +835,7 @@ function setPseudoNameIfPHN(executionContext) {
 
 
 
-// code block separator
+// ----------------------------------------------------------------------------------------------------Code Block separator----------------------------------------------------------------------------------------------------
 
 
 ///MDRATE data, field settings. Set fields based on detox addmission requiermeents
@@ -889,7 +909,7 @@ function setPostalCodeToRequired(executionContext) {
 
 
 
-// code block separator
+// ----------------------------------------------------------------------------------------------------Code Block separator----------------------------------------------------------------------------------------------------
 
 
 
@@ -941,7 +961,7 @@ function setPsudoName(executionContext) {
 
 
 
-// code block separator
+// ----------------------------------------------------------------------------------------------------Code Block separator----------------------------------------------------------------------------------------------------
 
 
 //Retrive feilds via lookup
@@ -998,7 +1018,7 @@ function fetchTableField(executionContext, lookupFieldSchema, targetFieldSchema,
 }
 
 
-// code block separator
+// ----------------------------------------------------------------------------------------------------Code Block separator----------------------------------------------------------------------------------------------------
 
 
 //reload feild in order to triger down stream events
@@ -1044,7 +1064,7 @@ function reloadLookupField(executionContext, lookupFieldSchema) {
 }
 
 
-// code block separator
+// ----------------------------------------------------------------------------------------------------Code Block separator----------------------------------------------------------------------------------------------------
 
 
 //Limit the number of options that can be selected for choice qustion
@@ -1072,7 +1092,7 @@ function enforceMaxSelections(executionContext, fieldName, maxAllowed) {
 }
 
 
-// code block separator
+// ----------------------------------------------------------------------------------------------------Code Block separator----------------------------------------------------------------------------------------------------
 
 
 function toggleWebResourceVisibility(executionContext) {
@@ -1129,7 +1149,7 @@ function toggleWebResourceVisibility(executionContext) {
 }
 
 
-// code block separator
+// // ----------------------------------------------------------------------------------------------------Code Block separator----------------------------------------------------------------------------------------------------
 
 
 function updateAppointmentConcatenation(executionContext) {
@@ -1187,7 +1207,7 @@ function updateAppointmentConcatenation(executionContext) {
 
 
 
-// code block separator
+// // ----------------------------------------------------------------------------------------------------Code Block separator----------------------------------------------------------------------------------------------------
 
 
 
@@ -1251,7 +1271,7 @@ function setServiceRequestDate(executionContext) {
 }
 
 
-// code block separator
+// // ----------------------------------------------------------------------------------------------------Code Block separator----------------------------------------------------------------------------------------------------
 
 
 function copyAdmissionDateTime(executionContext) {
@@ -1269,7 +1289,7 @@ function copyAdmissionDateTime(executionContext) {
 
 
 
-// code block separator
+// // ----------------------------------------------------------------------------------------------------Code Block separator----------------------------------------------------------------------------------------------------
 
 
 
@@ -1299,7 +1319,7 @@ function setShiftType(executionContext) {
 
 
 
-// code block separator
+// // ----------------------------------------------------------------------------------------------------Code Block separator----------------------------------------------------------------------------------------------------
 
 
 
@@ -1323,7 +1343,31 @@ function setCurrentShiftDateTime(executionContext) {
 
 
 
-// code block separator
+// // ----------------------------------------------------------------------------------------------------Code Block separator----------------------------------------------------------------------------------------------------
+
+
+
+function setCheckinDateToCurrentTime(executionContext) {
+  var formContext = executionContext.getFormContext();
+
+  // 1 = Create (unsaved new record), 2 = Update (already saved)
+  var formType = formContext.ui.getFormType();
+  if (formType !== 1) {
+    // Not a brand‑new record: do nothing
+    return;
+  }
+
+  var attr = formContext.getAttribute("cp_checkindate");
+  if (!attr) return;                 // field missing on form
+  if (attr.getValue()) return;       // someone already set it (don’t overwrite)
+
+  // Set current date/time (user local)
+  attr.setValue(new Date());
+}
+
+
+
+// // ----------------------------------------------------------------------------------------------------Code Block separator----------------------------------------------------------------------------------------------------
 
 
 
@@ -1347,7 +1391,7 @@ function setAssessmentDateTimeToCurrentTime(executionContext) {
 
 
 
-// code block separator
+// // ----------------------------------------------------------------------------------------------------Code Block separator----------------------------------------------------------------------------------------------------
 
 
 function updateAdmissionNotes() {
@@ -1455,7 +1499,7 @@ function updateAdmissionNotes() {
 
 
 
-// code block separator
+// // ----------------------------------------------------------------------------------------------------Code Block separator----------------------------------------------------------------------------------------------------
 
 
 function updateAdmissionTask() {
@@ -1535,7 +1579,7 @@ updateAdmissionTask();
 
 
 
-// code block separator
+// // ----------------------------------------------------------------------------------------------------Code Block separator----------------------------------------------------------------------------------------------------
 
 
 
@@ -1616,7 +1660,7 @@ updateAdmissionTask();
 
 
 
-// code block separator
+// // ----------------------------------------------------------------------------------------------------Code Block separator----------------------------------------------------------------------------------------------------
 
 
 function updateAssessmentSubstances(executionContext) {
@@ -1695,7 +1739,7 @@ function updateAssessmentSubstances(executionContext) {
 }
 
 
-// code block separator
+// // ----------------------------------------------------------------------------------------------------Code Block separator----------------------------------------------------------------------------------------------------
 
 
 function validateCheckinDate(executionContext) {
@@ -1725,7 +1769,7 @@ function validateCheckinDate(executionContext) {
 }
 
 
-// code block separator
+// // ----------------------------------------------------------------------------------------------------Code Block separator----------------------------------------------------------------------------------------------------
 
 
 function updateAssessmentOutcome(executionContext) {
@@ -1781,7 +1825,74 @@ function updateAssessmentOutcome(executionContext) {
 }
 
 
-// code block separator
+// // ----------------------------------------------------------------------------------------------------Code Block separator----------------------------------------------------------------------------------------------------
+
+
+
+// OnLoad function to set cp_preventduplicate if outcome is Admitted or Bed on Hold
+function setPreventDuplicateOnLoad(executionContext) {
+    var formContext = executionContext.getFormContext();
+    var outcomeAttr = formContext.getAttribute("cp_outcome");
+    if (outcomeAttr) {
+        var outcomeText = outcomeAttr.getText();  // get label of the outcome choice
+        // If outcome is "Admitted" or "Bed on Hold", mark prevent-duplicate flag as Yes (121570000)
+        if (outcomeText === "Admitted" || outcomeText === "Bed on Hold") {
+            formContext.getAttribute("cp_preventduplicate").setValue(121570000);
+        }
+    }
+}
+
+
+// =========================
+// OnSave: ONLY for existing forms (formType 2)
+// If cp_preventduplicate != Yes(121570000), set it to Yes and call processAssessmentAndCreateAdmission
+// =========================
+function createClientandAdmission4OldAssessment(executionContext) {
+  var formContext = executionContext.getFormContext();
+
+  // Run ONLY on existing records
+  var formType = formContext.ui.getFormType(); // 1=Create, 2=Update
+  if (formType === 2) {
+	
+  var preventDupAttr = formContext.getAttribute("cp_preventduplicate");
+  if (!preventDupAttr) return;
+
+   var formContext = executionContext.getFormContext();
+    var outcomeAttr = formContext.getAttribute("cp_outcome");
+        var outcomeText = outcomeAttr.getText();  // get label of the outcome choice
+        // If outcome is "Admitted" or "Bed on Hold", mark prevent-duplicate flag as Yes (121570000)
+
+  var current = preventDupAttr.getValue();
+if ((outcomeText === "Admitted" || outcomeText === "Bed on Hold") && (current !== 121570000)) {
+    preventDupAttr.setValue(121570000); // Yes
+    // call your existing function (unchanged) and pass executionContext
+    processAssessmentAndCreateAdmission(executionContext);
+  } else {
+    return; // already marked, do nothing
+  }
+  }
+
+}
+
+function createClientandAdmission4NewAssessment(executionContext){
+
+ var formContext = executionContext.getFormContext();
+ 
+  var formType = formContext.ui.getFormType(); // 1=Create, 2=Update
+  if (formType === 1) {
+	  processAssessmentAndCreateAdmission(executionContext);
+  }
+  
+  
+  
+// OnLoad handler: Store the initial outcome value on the Assessment Form for later comparison. This function is currently used in the another library named cp_create_client_or_admit_from_assessment
+// and it is called within the function processAssessmentAndCreateAdmission.
+function setInitialOutcomeOnAssessment(executionContext) {
+    var formContext = executionContext.getFormContext();
+    var outcome = formContext.getAttribute("cp_outcome").getValue();
+    window.initialOutcome = outcome;
+}
+
 
 
 function processAssessmentAndCreateAdmission(executionContext) {
@@ -1928,12 +2039,13 @@ function processAssessmentAndCreateAdmission(executionContext) {
       .catch(function(err) {
         console.error("Error in update/create:", err.message);
       });
+	}
   }
 }
 
 
 
-// code block separator
+// // ----------------------------------------------------------------------------------------------------Code Block separator----------------------------------------------------------------------------------------------------
 
 
 function updateAssessmentOutcomeToDeclinedBed(executionContext) {
@@ -1975,7 +2087,7 @@ function updateAssessmentOutcomeToDeclinedBed(executionContext) {
 
 
 
-// code block separator
+// // ----------------------------------------------------------------------------------------------------Code Block separator----------------------------------------------------------------------------------------------------
 
 
 
@@ -1990,13 +2102,6 @@ function ShiftSupervisorSignedoffVisibility(executionContext) {
     formContext.getControl("cp_shiftsupervisorsignedoff").setVisible(hasAccess);
     formContext.getControl("cp_shiftsupervisorsignature").setVisible(hasAccess);
 }
-
-
-
-
-// code block separator
-
-
 
 
 //On change 
@@ -2255,8 +2360,6 @@ function checkDuplicateAssessmentOnSave(executionContext) {
 }
 
 
-
-
 // Synchronous duplicate check function WITH popup that doesn't cause loops
 function checkDuplicateAssessmentSync(executionContext) {
     console.log("🔍 Checking for duplicate assessments (synchronous)...");
@@ -2343,6 +2446,314 @@ function checkDuplicateAssessmentSync(executionContext) {
     // Don't block the save - just show warnings after
     return false;
 }
+
+
+
+
+
+
+// Simple synchronous orchestrator function for OnSave event
+function assessmentSaveOrchestrator(executionContext) {
+    console.log("🎯 === ASSESSMENT SAVE ORCHESTRATOR STARTED (SYNC) ===");
+    
+    var eventArgs = executionContext.getEventArgs();
+    var formContext = executionContext.getFormContext();
+
+    if (!formContext) {
+        console.error("❌ Form context not found!");
+        return;
+    }
+
+    // Check if this is a bypass save (to prevent infinite loop)
+    if (formContext._bypassOrchestrator) {
+        console.log("🔄 Bypass flag detected - skipping orchestrator");
+        delete formContext._bypassOrchestrator;
+        return;
+    }
+
+    // Step 1: Check for duplicates FIRST (most important)
+    var shouldBlockSave = false;
+    try {
+        console.log("🔍 Step 1: Checking for duplicate assessments...");
+        shouldBlockSave = checkDuplicateAssessmentSync(executionContext);
+        if (shouldBlockSave) {
+            console.log("🚫 Save blocked due to duplicate check");
+            eventArgs.preventDefault();
+            return;
+        }
+        console.log("✅ Step 1 Complete: Duplicate check passed");
+    } catch (error) {
+        console.error("❌ Error in Step 1:", error);
+        // Continue with save despite error
+    }
+    
+    // Step 2: Update Assessment Substances
+    try {
+        console.log("💊 Step 2: Updating assessment substances...");
+        updateAssessmentSubstances(executionContext);
+        console.log("✅ Step 2 Complete: Substances update initiated");
+    } catch (error) {
+        console.error("❌ Error in Step 2:", error);
+        // Continue with save despite error
+    }
+    
+    // Step 3: Update Assessment with Check-in Dates
+    try {
+        console.log("📋 Step 3: Updating assessment with check-in dates...");
+        updateAssessmentWithCheckinDates(executionContext);
+        console.log("✅ Step 3 Complete: Check-in dates update initiated");
+    } catch (error) {
+        console.error("❌ Error in Step 3:", error);
+        // Continue with save despite error
+    }
+    
+    // Step 4: Process Assessment and Create Admission (LAST)
+    try {
+        console.log("📝 Step 4: Processing assessment and creating admission...");
+        processAssessmentAndCreateAdmission(executionContext);
+        console.log("✅ Step 4 Complete: Assessment processing initiated");
+    } catch (error) {
+        console.error("❌ Error in Step 4:", error);
+        // Continue with save despite error
+    }
+    
+    console.log("🎉 === ALL CHECKS COMPLETE - SAVE PROCEEDING ===");
+    // Save proceeds automatically since we didn't call preventDefault()
+}
+
+
+function onIncidentFormSave(executionContext) {
+    var formContext = executionContext.getFormContext();
+    var eventArgs = executionContext.getEventArgs();
+    // Check the Additional Clients field
+    var addlValue = formContext.getAttribute("cp_arethereadditionalclientsinvolved").getValue();
+    if (addlValue === 121570000) {  // 121570000 = 'Yes'
+        // Prevent the default save behavior
+        eventArgs.preventDefault();
+        // Save the current record first
+        formContext.data.save().then(function() {
+            var incidentId = formContext.data.entity.getId().replace(/[{}]/g, "");
+            // Retrieve the autonumber (reporting reference) of this incident
+            Xrm.WebApi.retrieveRecord("cp_incidentreport", incidentId, "?$select=cp_reportingreference").then(function(result) {
+                var originalRef = result["cp_reportingreference"];
+                // Show alert to user
+                var alertStrings = { text: "A New Incident Report will now be created for the next client involved in this incident.", title: "Additional Client Involved" };
+                var alertOptions = { height: 120, width: 400 };
+                Xrm.Navigation.openAlertDialog(alertStrings, alertOptions).then(function() {
+                    // Prepare new form parameters with copied fields
+                    var p = {};
+                    p["cp_incidenttype"] = formContext.getAttribute("cp_incidenttype").getValue();
+                    p["cp_pleaseselecttheserviceforthisreport"] = formContext.getAttribute("cp_pleaseselecttheserviceforthisreport").getValue();
+                    p["cp_followuptypeneeded"] = formContext.getAttribute("cp_followuptypeneeded").getValue();
+                    p["cp_dateofincident"] = formContext.getAttribute("cp_dateofincident").getValue();
+                    p["cp_timeofincident"] = formContext.getAttribute("cp_timeofincident").getValue();
+                    p["cp_buildingnameoraddress"] = formContext.getAttribute("cp_buildingnameoraddress").getValue();
+                    p["cp_area"] = formContext.getAttribute("cp_area").getValue();
+                    p["cp_peopleinvolved"] = formContext.getAttribute("cp_peopleinvolved").getValue();
+                    p["cp_arethereadditionalclientsinvolved"] = formContext.getAttribute("cp_arethereadditionalclientsinvolved").getValue();
+                    // Lookup fields:
+                    var recBy = formContext.getAttribute("cp_incidentrecordedby").getValue();
+                    if (recBy && recBy[0]) {
+                        p["cp_incidentrecordedby"] = recBy[0].id.replace(/[{}]/g, "");
+                        p["cp_incidentrecordedbyname"] = recBy[0].name;
+                        p["cp_incidentrecordedbytype"] = recBy[0].entityType;
+                    }
+                    var sup = formContext.getAttribute("cp_shiftsupervisormanagerpresent").getValue();
+                    if (sup && sup[0]) {
+                        p["cp_shiftsupervisormanagerpresent"] = sup[0].id.replace(/[{}]/g, "");
+                        p["cp_shiftsupervisormanagerpresentname"] = sup[0].name;
+                        p["cp_shiftsupervisormanagerpresenttype"] = sup[0].entityType;
+                    }
+                    // Reporting Reference
+                    p["cp_reportingreference"] = originalRef;
+                    // Open the new Incident form with these parameters
+                    var entityOptions = { entityName: "cp_incidentreport", useQuickCreateForm: false };
+                    Xrm.Navigation.openForm(entityOptions, p).catch(function(error) {
+                        console.error("Error opening new incident form:", error.message);
+                    });
+                });
+            });
+        }, function(error) {
+            console.error("Save failed:", error.message);
+        });
+    }
+}
+
+
+// ----------------------------------------------------------------------------------------------------Code Block separator----------------------------------------------------------------------------------------------------
+
+
+// File: cp_/Admission.DetoxTransition.js
+var medical_to_social_admission = (function () {
+  "use strict";
+
+  var DETOX_TYPE = Object.freeze({ MEDICAL: 121570000, SOCIAL: 121570001 });
+  var TRANSITION_TO_SOCIAL = Object.freeze({ YES: 121570000, NO: 121570001 });
+  var MEDICAL_DISCHARGE_REASON = Object.freeze({ COMPLETED_MEDICAL_DETOX: 121570000 });
+
+  var state = { prevDetoxType: null };
+
+  function onLoad(executionContext) {
+    var fc = executionContext.getFormContext();
+
+    // Cache initial Detox Type
+    state.prevDetoxType = getAttrVal(fc, "cp_detoxtype");
+
+    // Wire change handlers
+    var detoxAttr = fc.getAttribute("cp_detoxtype");
+    if (detoxAttr) detoxAttr.addOnChange(onDetoxTypeChange);
+
+    var transitionAttr = fc.getAttribute("cp_isclienttransitioningtosocialadmission");
+    if (transitionAttr) transitionAttr.addOnChange(onTransitionChoiceChange);
+
+    // --- YOUR RULE (run FIRST) ---
+    // If cp_isclienttransitioningtosocialadmission != Yes:
+    //   - clear & hide cp_medicaldischargedate
+    //   - clear & hide cp_reasonformedicaldischarge
+    //   - set cp_detoxtype = null
+    var transitionVal = getAttrVal(fc, "cp_isclienttransitioningtosocialadmission");
+
+    // Existing onLoad show rule (only if Social + Yes)
+    var currentDetox = getAttrVal(fc, "cp_detoxtype");
+    if (currentDetox === DETOX_TYPE.SOCIAL && transitionVal === TRANSITION_TO_SOCIAL.YES) {
+      hideAllControls(fc, "cp_medicaldischargedate", false);
+      hideAllControls(fc, "cp_reasonformedicaldischarge", false);
+      hideAllControls(fc, "cp_isclienttransitioningtosocialadmission", false);
+    }
+  }
+
+  function onDetoxTypeChange(executionContext) {
+    var fc = executionContext.getFormContext();
+    var current = getAttrVal(fc, "cp_detoxtype");
+    var prev = state.prevDetoxType;
+
+    if ((prev === null || typeof prev === "undefined") && current === DETOX_TYPE.MEDICAL) {
+      // Null -> Medical: no action
+    }
+
+    if (prev === DETOX_TYPE.MEDICAL && current === DETOX_TYPE.SOCIAL) {
+      hideAllControls(fc, "cp_isclienttransitioningtosocialadmission", false);
+      setRequired(fc, "cp_isclienttransitioningtosocialadmission", "required");
+    }
+
+    state.prevDetoxType = current;
+  }
+
+  function onTransitionChoiceChange(executionContext) {
+    var fc = executionContext.getFormContext();
+    var choiceVal = getAttrVal(fc, "cp_isclienttransitioningtosocialadmission");
+
+    if (choiceVal === TRANSITION_TO_SOCIAL.YES) {
+      hideAllControls(fc, "cp_medicaldischargedate", false);
+      hideAllControls(fc, "cp_reasonformedicaldischarge", false);
+
+      var existingDate = getAttrVal(fc, "cp_medicaldischargedate");
+      if (!existingDate) setAttrVal(fc, "cp_medicaldischargedate", new Date()); // user local
+
+      setAttrVal(fc, "cp_reasonformedicaldischarge", MEDICAL_DISCHARGE_REASON.COMPLETED_MEDICAL_DETOX);
+    }
+    // No extra behavior requested for "not Yes" on change; your rule is OnLoad.
+  }
+
+  // ---------- Utilities ----------
+  function getAttr(fc, name) {
+    return fc.getAttribute(name);
+  }
+  function getAttrVal(fc, name) {
+    var a = getAttr(fc, name);
+    return a ? a.getValue() : null;
+  }
+  function setAttrVal(fc, name, val) {
+    var a = getAttr(fc, name);
+    if (a) a.setValue(val);
+  }
+  function clearValue(fc, name) {
+    var a = getAttr(fc, name);
+    if (a) a.setValue(null);
+  }
+  function hideAllControls(fc, name, hide) {
+    // Some attributes appear on multiple form controls; hide/show them all
+    var ctrls = fc.ui.controls.get(function (c) { return c.getName && c.getName() === name; });
+    if (ctrls && ctrls.length) {
+      for (var i = 0; i < ctrls.length; i++) {
+        try { ctrls[i].setVisible(!hide ? true : false); } catch (e) { /* ignore */ }
+      }
+    } else {
+      // Fallback single-control lookup
+      var c = fc.getControl(name);
+      if (c) { try { c.setVisible(!hide ? true : false); } catch (e) {} }
+    }
+  }
+  function setRequired(fc, name, level /* none|required|recommended */) {
+    var a = getAttr(fc, name);
+    if (a) a.setRequiredLevel(level);
+  }
+
+  return { onLoad, onDetoxTypeChange, onTransitionChoiceChange };
+})();
+
+
+
+  function onTransitionToSocialChange(executionContext) {
+    var fc = executionContext.getFormContext();
+	
+	var DETOX_TYPE = Object.freeze({ MEDICAL: 121570000, SOCIAL: 121570001 });
+	var TRANSITION_TO_SOCIAL = Object.freeze({ YES: 121570000, NO: 121570001 });
+	var MEDICAL_DISCHARGE_REASON = Object.freeze({ COMPLETED_MEDICAL_DETOX: 121570000 });
+	
+  // ---------- Utilities ----------
+  function getAttr(fc, name) {
+    return fc.getAttribute(name);
+  }
+  function getAttrVal(fc, name) {
+    var a = getAttr(fc, name);
+    return a ? a.getValue() : null;
+  }
+  function setAttrVal(fc, name, val) {
+    var a = getAttr(fc, name);
+    if (a) a.setValue(val);
+  }
+  function clearValue(fc, name) {
+    var a = getAttr(fc, name);
+    if (a) a.setValue(null);
+  }
+  
+  function hideAllControls(fc, name, hide) {
+    // Some attributes appear on multiple form controls; hide/show them all
+    var ctrls = fc.ui.controls.get(function (c) { return c.getName && c.getName() === name; });
+    if (ctrls && ctrls.length) {
+      for (var i = 0; i < ctrls.length; i++) {
+        try { ctrls[i].setVisible(!hide ? true : false); } catch (e) { /* ignore */ }
+      }
+    } else {
+      // Fallback single-control lookup
+      var c = fc.getControl(name);
+      if (c) { try { c.setVisible(!hide ? true : false); } catch (e) {} }
+    }
+  }
+	
+    // --- YOUR RULE (run FIRST) ---
+    // If cp_isclienttransitioningtosocialadmission != Yes:
+    //   - clear & hide cp_medicaldischargedate
+    //   - clear & hide cp_reasonformedicaldischarge
+    //   - set cp_detoxtype = null
+    var transitionVal = getAttrVal(fc, "cp_isclienttransitioningtosocialadmission");
+    if (transitionVal !== TRANSITION_TO_SOCIAL.YES) {
+      clearValue(fc, "cp_medicaldischargedate");
+      hideAllControls(fc, "cp_medicaldischargedate", true);
+
+      clearValue(fc, "cp_reasonformedicaldischarge");
+      hideAllControls(fc, "cp_reasonformedicaldischarge", true);
+
+      // Clear Detox Type as requested
+      clearValue(fc, "cp_detoxtype");
+    }
+		}
+		
+		
+		
+//----------------------------------------------------------------------------Code Block separator-----------------------------------------------------------------------
+
 
 
 /**
@@ -2737,79 +3148,3 @@ function validatePHNField(
 
   return false;
 }
-
-
-
-
-
-// Simple synchronous orchestrator function for OnSave event
-function assessmentSaveOrchestrator(executionContext) {
-    console.log("🎯 === ASSESSMENT SAVE ORCHESTRATOR STARTED (SYNC) ===");
-    
-    var eventArgs = executionContext.getEventArgs();
-    var formContext = executionContext.getFormContext();
-
-    if (!formContext) {
-        console.error("❌ Form context not found!");
-        return;
-    }
-
-    // Check if this is a bypass save (to prevent infinite loop)
-    if (formContext._bypassOrchestrator) {
-        console.log("🔄 Bypass flag detected - skipping orchestrator");
-        delete formContext._bypassOrchestrator;
-        return;
-    }
-
-    // Step 1: Check for duplicates FIRST (most important)
-    var shouldBlockSave = false;
-    try {
-        console.log("🔍 Step 1: Checking for duplicate assessments...");
-        shouldBlockSave = checkDuplicateAssessmentSync(executionContext);
-        if (shouldBlockSave) {
-            console.log("🚫 Save blocked due to duplicate check");
-            eventArgs.preventDefault();
-            return;
-        }
-        console.log("✅ Step 1 Complete: Duplicate check passed");
-    } catch (error) {
-        console.error("❌ Error in Step 1:", error);
-        // Continue with save despite error
-    }
-    
-    // Step 2: Update Assessment Substances
-    try {
-        console.log("💊 Step 2: Updating assessment substances...");
-        updateAssessmentSubstances(executionContext);
-        console.log("✅ Step 2 Complete: Substances update initiated");
-    } catch (error) {
-        console.error("❌ Error in Step 2:", error);
-        // Continue with save despite error
-    }
-    
-    // Step 3: Update Assessment with Check-in Dates
-    try {
-        console.log("📋 Step 3: Updating assessment with check-in dates...");
-        updateAssessmentWithCheckinDates(executionContext);
-        console.log("✅ Step 3 Complete: Check-in dates update initiated");
-    } catch (error) {
-        console.error("❌ Error in Step 3:", error);
-        // Continue with save despite error
-    }
-    
-    // Step 4: Process Assessment and Create Admission (LAST)
-    try {
-        console.log("📝 Step 4: Processing assessment and creating admission...");
-        processAssessmentAndCreateAdmission(executionContext);
-        console.log("✅ Step 4 Complete: Assessment processing initiated");
-    } catch (error) {
-        console.error("❌ Error in Step 4:", error);
-        // Continue with save despite error
-    }
-    
-    console.log("🎉 === ALL CHECKS COMPLETE - SAVE PROCEEDING ===");
-    // Save proceeds automatically since we didn't call preventDefault()
-}
-
-
-
