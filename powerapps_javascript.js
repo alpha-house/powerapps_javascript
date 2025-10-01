@@ -2873,9 +2873,7 @@ async function checkRequiredFieldsHaveData(
   if (missingDataFields.length > 0) {
     let warningMessage =
       `The following required fields are missing data on the ${entityDisplayName} form:\n\n` +
-      missingDataFields.map(d => `• ${d}`).join("\n") +
-      `\n\nFields with Data: ${fieldsToCheck.length - missingDataFields.length}/${fieldsToCheck.length}` +
-      `\nFields Missing Data: ${missingDataFields.length}`;
+      missingDataFields.map(d => `• ${d}`).join("\n");
 
     if (contextMessage) warningMessage += `\n\n${contextMessage}`;
 
@@ -3068,6 +3066,312 @@ async function checkRelatedEntityData(
   }
 }
 
+/**
+ * Checks if specified fields have data on the current record (retrieves from database)
+ * This approach works regardless of which tab fields are on or if they're even on the form
+ * @param {object}  executionContext  - Form execution context
+ * @param {string}  dialogTitle       - Dialog title (supports \n via escaping)
+ * @param {object|string} fieldMapping- Object (or JSON string) mapping field schema names -> display names
+ * @param {string}  entityDisplayName - Display name of the entity
+ * @param {string}  contextMessage    - Optional additional context (supports \n via escaping)
+ * @param {boolean} blockSave         - Prevent save if fields are missing (default: false)
+ * @returns {Promise<boolean>}        - true if any fields are missing data; false otherwise
+ */
+async function checkRequiredFieldsHaveData(
+  executionContext,
+  dialogTitle,
+  fieldMapping,
+  entityDisplayName,
+  contextMessage,
+  blockSave = false
+) {
+  const formContext = executionContext.getFormContext();
+  if (!formContext) {
+    console.error("Form context not found!");
+    return false;
+  }
+
+  // --- helpers ---
+  const notifId = "missingDataError_current";
+
+  function normalizeMsg(s) {
+    if (typeof s !== "string") return "";
+    return s.replace(/\\n/g, "\n").replace(/\\t/g, "\t");
+  }
+
+  function isMissing(v) {
+    if (v === null || v === undefined) return true;
+    if (Array.isArray(v)) return v.length === 0;       // multi-selects
+    if (typeof v === "string") return v.trim() === ""; // strings
+    // numbers (0), booleans (false), Date objects are considered present if defined
+    return false;
+  }
+
+  // Helper to read values from retrieved record (handles lookups)
+  const getValue = (rec, name) =>
+    rec[name] !== undefined ? rec[name] : rec["_" + name + "_value"];
+
+  // Parse mapping if passed as JSON string in handler box
+  if (typeof fieldMapping === "string") {
+    try { fieldMapping = JSON.parse(fieldMapping); }
+    catch (e) {
+      console.error("fieldMapping must be valid JSON", e);
+      return false;
+    }
+  }
+  if (!fieldMapping || typeof fieldMapping !== "object") {
+    console.error("Invalid fieldMapping parameter. Must be an object or JSON string.");
+    return false;
+  }
+
+  dialogTitle    = normalizeMsg(dialogTitle)    || `Missing ${entityDisplayName} Data`;
+  contextMessage = normalizeMsg(contextMessage);
+
+  const fieldsToCheck = Object.keys(fieldMapping);
+  if (fieldsToCheck.length === 0) {
+    console.warn("No fields provided in fieldMapping.");
+    return false;
+  }
+
+  // Get current record ID and entity name
+  const entityName = formContext.data.entity.getEntityName();
+  const recordId = formContext.data.entity.getId().replace(/[{}]/g, "");
+
+  if (!recordId) {
+    console.warn("No record ID found - this may be a new record.");
+    return false; // Can't validate unsaved records via WebAPI
+  }
+
+  // --- Save-blocking guard (prevents infinite loop on re-save) ---
+  if (blockSave) {
+    if (formContext._bypassValidation) {
+      delete formContext._bypassValidation;
+      return false;
+    }
+    const args = executionContext.getEventArgs && executionContext.getEventArgs();
+    if (args && typeof args.preventDefault === "function") {
+      args.preventDefault();
+    }
+  }
+
+  // Build select list for retrieveRecord
+  const select = fieldsToCheck.join(",");
+  const query = select ? `?$select=${select}` : "";
+
+  // Clear any prior notifications
+  formContext.ui.clearFormNotification(notifId);
+
+  try {
+    // Retrieve the current record from the database
+    const record = await Xrm.WebApi.retrieveRecord(entityName, recordId, query);
+
+    const missingDataFields = [];
+
+    for (const fieldName of fieldsToCheck) {
+      const display = fieldMapping[fieldName] || fieldName;
+      const value = getValue(record, fieldName);
+
+      if (isMissing(value)) {
+        console.warn("Field missing data:", fieldName);
+        missingDataFields.push(display);
+      }
+    }
+
+    // Missing data warning
+    if (missingDataFields.length > 0) {
+      let warningMessage =
+        `The following required fields are missing data on the ${entityDisplayName} record:\n\n` +
+        missingDataFields.map(d => `• ${d}`).join("\n");
+
+      if (contextMessage) warningMessage += `\n\n${contextMessage}`;
+
+      await Xrm.Navigation.openAlertDialog({ title: dialogTitle, text: warningMessage }, { width: 520 });
+
+      // Compact banner (single-line)
+      formContext.ui.setFormNotification(
+        `Missing Data: ${missingDataFields.join(", ")}`,
+        "ERROR",
+        notifId
+      );
+
+      // Keep save blocked
+      return true;
+    }
+
+    // All good — clear banner and, if we intercepted a save, re-save once
+    if (blockSave) {
+      formContext._bypassValidation = true;
+      formContext.data.entity.save();
+    }
+    return false;
+
+  } catch (error) {
+    console.error("Error retrieving current record:", error && error.message ? error.message : error);
+
+    // Show error dialog
+    await Xrm.Navigation.openAlertDialog({
+      title: dialogTitle || `Validation Error — ${entityDisplayName}`,
+      text: `Could not validate ${entityDisplayName} data. Please try again.\n\nDetails: ${error.message || error}`
+    });
+
+    formContext.ui.setFormNotification(
+      `Could not validate ${entityDisplayName} data. Try again.`,
+      "ERROR",
+      notifId
+    );
+
+    return false; // Don't auto-save on error
+  }
+}
+
+
+
+/**
+ * Check related records using the relationship directly
+ * Use this if you know the lookup field name on the related entity
+ * 
+ * EXAMPLE EVENT HANDLER PARAMETERS:
+ * Function: checkRelatedRecordsExistSimple
+ * Parameters (comma-separated):
+ * - "cp_patternofuse"                                    // Related entity logical name
+ * - "cp_admission"                                       // Lookup field on RELATED ENTITY pointing to current record
+ * - "cp_usetype"                                         // Choice field to check
+ * - "{\"121570000\":\"Primary\",\"121570001\":\"Secondary\",\"121570002\":\"Other\"}"  // Required choice values (JSON)
+ * - "Missing Pattern of Use Data"                        // Dialog title
+ * - "Pattern of Use"                                     // Entity display name
+ * - "Please ensure all addiction types are documented."  // Optional context message
+ * - false                                                // blockSave (true/false)
+ * 
+ * @param {object}  executionContext          - Form execution context
+ * @param {string}  relatedEntityName         - Logical name of related entity (e.g., "cp_patternofuse")
+ * @param {string}  lookupFieldToCurrentEntity - Schema name of lookup on RELATED entity pointing to current record (e.g., "cp_admission")
+ * @param {string}  choiceFieldName           - Schema name of the choice field to check (e.g., "cp_usetype")
+ * @param {object|string} requiredChoices     - Object mapping choice values -> display names, or JSON string
+ * @param {string}  dialogTitle               - Dialog title (supports \n via escaping)
+ * @param {string}  entityDisplayName         - Display name for the related entity (e.g., "Pattern of Use")
+ * @param {string}  contextMessage            - Optional additional context (supports \n via escaping)
+ * @param {boolean} blockSave                 - Prevent save if records are missing (default: false)
+ * @returns {Promise<boolean>}                - true if any required records are missing; false otherwise
+ */
+async function checkRelatedRecordsExistSimple(
+  executionContext,
+  relatedEntityName,
+  lookupFieldToCurrentEntity,
+  choiceFieldName,
+  requiredChoices,
+  dialogTitle,
+  entityDisplayName,
+  contextMessage = "",
+  blockSave = false
+) {
+  const formContext = executionContext.getFormContext();
+  
+  if (!formContext) {
+    console.error("Form context not found");
+    return false;
+  }
+
+  function normalizeMsg(s) {
+    if (typeof s !== "string") return "";
+    return s.replace(/\\n/g, "\n").replace(/\\t/g, "\t");
+  }
+
+  if (typeof requiredChoices === "string") {
+    try { requiredChoices = JSON.parse(requiredChoices); }
+    catch (e) {
+      console.error("requiredChoices must be valid JSON", e);
+      return false;
+    }
+  }
+
+  dialogTitle = normalizeMsg(dialogTitle) || `Missing ${entityDisplayName} Records`;
+  contextMessage = normalizeMsg(contextMessage);
+
+  const requiredValues = Object.keys(requiredChoices);
+  const recordId = formContext.data.entity.getId().replace(/[{}]/g, "");
+
+  if (!recordId) {
+    console.warn("No record ID found.");
+    return false;
+  }
+
+  if (blockSave) {
+    if (formContext._bypassValidation) {
+      delete formContext._bypassValidation;
+      return false;
+    }
+    const args = executionContext.getEventArgs && executionContext.getEventArgs();
+    if (args && typeof args.preventDefault === "function") {
+      args.preventDefault();
+    }
+  }
+
+  const notifId = "missingRelatedRecords_" + relatedEntityName;
+  formContext.ui.clearFormNotification(notifId);
+
+  try {
+    // Query related records filtering by the lookup to current record
+    const filter = `?$filter=_${lookupFieldToCurrentEntity}_value eq ${recordId}&$select=${choiceFieldName}`;
+    const result = await Xrm.WebApi.retrieveMultipleRecords(relatedEntityName, filter);
+
+    const foundValues = new Set();
+    if (result && result.entities) {
+      result.entities.forEach(record => {
+        const choiceValue = record[choiceFieldName];
+        if (choiceValue !== null && choiceValue !== undefined) {
+          foundValues.add(choiceValue.toString());
+        }
+      });
+    }
+
+    const missingValues = requiredValues.filter(value => !foundValues.has(value));
+
+    if (missingValues.length > 0) {
+      const missingDisplayNames = missingValues.map(v => requiredChoices[v] || v);
+
+      let warningMessage =
+        `The following ${entityDisplayName} records are missing:\n\n` +
+        missingDisplayNames.map(d => `• ${d}`).join("\n");
+
+      if (contextMessage) warningMessage += `\n\n${contextMessage}`;
+
+      await Xrm.Navigation.openAlertDialog(
+        { title: dialogTitle, text: warningMessage },
+        { width: 520 }
+      );
+
+      formContext.ui.setFormNotification(
+        `Missing ${entityDisplayName}: ${missingDisplayNames.join(", ")}`,
+        "ERROR",
+        notifId
+      );
+
+      return true;
+    }
+
+    if (blockSave) {
+      formContext._bypassValidation = true;
+      formContext.data.entity.save();
+    }
+    return false;
+
+  } catch (error) {
+    console.error("Error retrieving related records:", error && error.message ? error.message : error);
+
+    await Xrm.Navigation.openAlertDialog({
+      title: dialogTitle || `Validation Error — ${entityDisplayName}`,
+      text: `Could not validate ${entityDisplayName} records. Please try again.\n\nDetails: ${error.message || error}`
+    });
+
+    formContext.ui.setFormNotification(
+      `Could not validate ${entityDisplayName} records. Try again.`,
+      "ERROR",
+      notifId
+    );
+
+    return false;
+  }
+}
 
 
 /**
