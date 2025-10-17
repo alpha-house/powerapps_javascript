@@ -3450,3 +3450,68 @@ function validatePHNField(
 
   return false;
 }
+<<<<<<< HEAD
+
+
+
+// File: ahb.client.multipleunknown.js
+// Purpose: Show/Hide ahb_numberofunknowclients based on the lookup's name
+
+(function () {
+  "use strict";
+
+  // Helper: safely get formContext from executionContext
+  function getFormContext(executionContext) {
+    return executionContext.getFormContext
+      ? executionContext.getFormContext()
+      : executionContext;
+  }
+
+  // Normalizes a string for robust comparisons
+  function norm(s) {
+    return (s || "").toString().trim().toLowerCase();
+  }
+
+  // Core: toggles visibility of the target field
+  function toggleUnknownClientsVisibility(formContext) {
+    var targetControl = formContext.getControl("ahb_numberofunknowclients");
+    if (!targetControl) return; // control not on this form
+
+    var lookupAttr = formContext.getAttribute("_ahb_client_value") 
+                  || formContext.getAttribute("ahb_client"); // fallback if prefixed form not used
+    var shouldShow = false;
+
+    if (lookupAttr) {
+      var v = lookupAttr.getValue();
+      if (v && v.length > 0) {
+        // For lookups in model-driven apps, v[0].name is the primary name (contact.fullname)
+        var displayName = v[0].name;
+        if (norm(displayName) === "multiple unknown") {
+          shouldShow = true;
+        }
+      }
+    }
+
+    targetControl.setVisible(shouldShow);
+  }
+
+  // Public: OnLoad handler
+  function onLoad(executionContext) {
+    var formContext = getFormContext(executionContext);
+    toggleUnknownClientsVisibility(formContext);
+  }
+
+  // Public: OnChange for the client lookup
+  function onClientChange(executionContext) {
+    var formContext = getFormContext(executionContext);
+    toggleUnknownClientsVisibility(formContext);
+  }
+
+  // Expose to global for event binding
+  window.AHB_MultipleUnknown = {
+    onLoad: onLoad,
+    onClientChange: onClientChange
+  };
+})();
+=======
+>>>>>>> 58008774bbca10e877426abba40eb06d6fd7cb61
