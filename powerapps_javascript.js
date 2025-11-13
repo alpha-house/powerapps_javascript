@@ -3213,3 +3213,19 @@ function validatePHNField(
 
 
 
+// This function is meant to be called from the form OnLoad event
+// with the field's logical name passed in as a parameter.
+function setFieldToUrlOnLoad(executionContext, fieldName) {
+    var formContext = executionContext.getFormContext();
+    var urlValue = "https://redcap.albertahealthservices.ca/surveys/?s=F8NHCEYRYMAH74T3";
+
+    var attribute = formContext.getAttribute(fieldName);
+
+    if (attribute) {
+        attribute.setValue(urlValue);
+        // ensure value is saved even if unchanged by user
+        attribute.setSubmitMode("always");
+    } else {
+        console.warn("Field not found on form: " + fieldName);
+    }
+}
