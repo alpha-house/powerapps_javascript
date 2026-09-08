@@ -278,6 +278,65 @@ function controlFieldVisibility(executionContext) {
 
 
 
+function setControlVisibilityByRole(executionContext, roleNames, controlNames) {
+    // Shows the named controls only to users holding at least one of the named roles.
+    // Both lists come from the handler's parameters box as comma-separated strings, e.g.
+    //   "Boreal Managers,Boreal Directors", "ahb_referralcomitteestatus,ahb_pendingreason"
+    // Controls missing from the form are skipped. Nothing happens if either list is empty.
+    var formContext = executionContext.getFormContext();
+
+    var toList = function (value) {
+        if (Array.isArray(value)) { return value; }
+        if (typeof value !== "string") { return []; }
+        return value.split(",").map(function (s) { return s.trim(); }).filter(Boolean);
+    };
+    var allowedRoles = toList(roleNames);
+    var controls = toList(controlNames);
+    if (allowedRoles.length === 0 || controls.length === 0) { return; }
+
+    var userRoles = Xrm.Utility.getGlobalContext().userSettings.roles.getAll();
+    var hasAccess = userRoles.some(function (role) {
+        return allowedRoles.indexOf(role.name) !== -1;
+    });
+
+    controls.forEach(function (name) {
+        var control = formContext.getControl(name);
+        if (control) { control.setVisible(hasAccess); }
+    });
+}
+
+
+
+// code block separator
+
+
+
+/**
+ * Required on update only (2026-09-04). Some fields cannot be answered until the record
+ * exists - "Income reviewed" on the Intake, Quarterly and Exit forms depends on the
+ * income subgrid, which only renders after the first save. A column-level Business
+ * Required blocks that first save, so those columns are optional at the column and this
+ * function makes them required on the form once the record has been created.
+ * Wire on form OnLoad with "pass execution context" ticked and the field names in the
+ * parameters box as one comma-separated string, e.g. "ahb_incomereviewed".
+ * Fields missing from the form are skipped. Form type 1 = Create: nothing is required.
+ */
+function requireOnUpdate(executionContext, attributeNames) {
+    var formContext = executionContext.getFormContext();
+    if (typeof attributeNames !== "string") { return; }
+    var isCreate = formContext.ui.getFormType() === 1;
+    attributeNames.split(",").forEach(function (name) {
+        var attr = formContext.getAttribute(name.trim());
+        if (attr) { attr.setRequiredLevel(isCreate ? "none" : "required"); }
+    });
+}
+
+
+
+// code block separator
+
+
+
 var ReferralForm = ReferralForm || {};
 
 ReferralForm.handleConsistentIncomeChange = function(executionContext) {
