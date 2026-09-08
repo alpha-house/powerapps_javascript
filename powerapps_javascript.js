@@ -886,6 +886,71 @@ function setCurrentDateTime(executionContext, attributeSchemaName) {
 
 
 
+// code block separator
+
+
+
+/**
+ * POPA notice (2026-09-03). On the Boreal client main form the notice web resource
+ * (ahb_popa_notice) sits in the same section as the "POPA notice read" Yes/No, so the
+ * section cannot be hidden without hiding the attestation. Hide the web resource
+ * control instead: shown while the notice has not been read (No / blank), hidden once
+ * it reads Yes. Wire on form OnLoad and on ahc_popanoticeread OnChange, with
+ * "pass execution context" ticked. Same shape as toggleWebResourceVisibility above.
+ */
+function togglePopaNotice(executionContext) {
+    var formContext = executionContext.getFormContext();
+    var readAttr = formContext.getAttribute("ahc_popanoticeread");
+    if (!readAttr) { return; }
+    var control = formContext.getControl("WebResource_popa_notice") || formContext.getControl("WebResource_new_1");
+    if (!control) { return; }
+    control.setVisible(readAttr.getValue() !== true);
+}
+
+/**
+ * POPA notice (2026-09-03). When "POPA notice read" flips to Yes, stamp the moment and
+ * the text: POPA notice given = now (blank only - never overwrites a date already
+ * entered) and Notice version given = the current POPA notice option (blank only).
+ * No form-type check: existing clients being caught up need the stamp too. Wire on
+ * ahc_popanoticeread OnChange with "pass execution context" ticked; works on the main
+ * form, the quick create and the embedded client form. ahc_popanoticedate is
+ * UserLocal, so a plain new Date() is right - no manual timezone shift.
+ */
+var POPA_NOTICE_CURRENT_VERSION = 758200011; // "POPA notice (effective 2026-09-03)"
+
+function stampPopaNotice(executionContext) {
+    var formContext = executionContext.getFormContext();
+    var readAttr = formContext.getAttribute("ahc_popanoticeread");
+    if (!readAttr || readAttr.getValue() !== true) { return; }
+    var dateAttr = formContext.getAttribute("ahc_popanoticedate");
+    if (dateAttr && !dateAttr.getValue()) { dateAttr.setValue(new Date()); }
+    var versionAttr = formContext.getAttribute("ahc_popanoticeversion");
+    if (versionAttr && versionAttr.getValue() === null) { versionAttr.setValue(POPA_NOTICE_CURRENT_VERSION); }
+}
+
+/**
+ * Identification (2026-09-03). "Identification (Other)" is shown only while the
+ * Identification Types multi-select includes Other. A business rule cannot read a
+ * multi-select, so this is script. Wire on form OnLoad and on ahc_identificationtypes
+ * OnChange with "pass execution context" ticked - on the Boreal client main form and
+ * the ID embedded form. Clears the Other text when Other is deselected, so a stale
+ * value cannot linger hidden.
+ */
+var IDENTIFICATION_OTHER = 758200006; // ahc_identificationtype "Other"
+
+function toggleIdentificationOther(executionContext) {
+    var formContext = executionContext.getFormContext();
+    var typesAttr = formContext.getAttribute("ahc_identificationtypes");
+    var otherAttr = formContext.getAttribute("ahc_identificationother");
+    if (!typesAttr || !otherAttr) { return; }
+    var selected = typesAttr.getValue() || [];
+    var hasOther = selected.indexOf(IDENTIFICATION_OTHER) !== -1;
+    otherAttr.controls.forEach(function (c) { c.setVisible(hasOther); });
+    if (!hasOther && otherAttr.getValue()) { otherAttr.setValue(null); }
+}
+
+
+
 // ----------------------------------------------------------------------------------------------------Boreal Ends Here----------------------------------------------------------------------------------------------------
 // ----------------------------------------------------------------------------------------------------Code Block separator----------------------------------------------------------------------------------------------------
 // ----------------------------------------------------------------------------------------------------Detox Starts Here----------------------------------------------------------------------------------------------------
