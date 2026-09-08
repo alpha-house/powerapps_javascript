@@ -951,6 +951,39 @@ function toggleIdentificationOther(executionContext) {
 
 
 
+function setFollowUpEmailSent(executionContext) {
+    var formContext = executionContext.getFormContext();
+
+    // OptionSet values
+    var YES = 121570000;
+    var NO  = 121570001;
+
+    // Get the value of ahb_followuprequired
+    var followUpRequiredAttr = formContext.getAttribute("ahb_followuprequired");
+    var followUpEmailSentAttr = formContext.getAttribute("ahb_followupemailsent");
+
+    if (!followUpRequiredAttr || !followUpEmailSentAttr) {
+        return;
+    }
+
+    var followUpRequiredValue = followUpRequiredAttr.getValue();
+
+    if (followUpRequiredValue === YES) {
+        // If Follow-up Required = Yes → set Follow-up Email Sent = Yes
+        followUpEmailSentAttr.setValue(YES);
+    } else {
+        // Otherwise → set Follow-up Email Sent = No
+        followUpEmailSentAttr.setValue(NO);
+    }
+}
+
+
+
+
+// code block separator
+
+
+
 // ----------------------------------------------------------------------------------------------------Boreal Ends Here----------------------------------------------------------------------------------------------------
 // ----------------------------------------------------------------------------------------------------Code Block separator----------------------------------------------------------------------------------------------------
 // ----------------------------------------------------------------------------------------------------Detox Starts Here----------------------------------------------------------------------------------------------------
