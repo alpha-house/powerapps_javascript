@@ -337,6 +337,73 @@ function requireOnUpdate(executionContext, attributeNames) {
 
 
 
+/**
+ * Consent form (2026-09-08). Scope the ROI lookup to the client named on the consent,
+ * and to ACTIVE ROIs only. Without it the box lists every ROI in the system, and picking
+ * the wrong one attaches the consent to the wrong person with nothing on screen to say so.
+ * The filter is added inside addPreSearch so it is rebuilt each time the box is opened,
+ * which is how it picks up a client chosen after the form loaded. With no client set yet
+ * it still hides inactive ROIs. Wire on form OnLoad with "pass execution context" ticked.
+ */
+function filterRoiByClient(executionContext) {
+    var formContext = executionContext.getFormContext();
+    var roi = formContext.getControl("ahb_roi");
+    var clientAttr = formContext.getAttribute("ahb_client");
+    if (!roi || !clientAttr || !roi.addPreSearch) { return; }
+    roi.addPreSearch(function () {
+        var value = clientAttr.getValue();
+        var id = (value && value.length) ? value[0].id.replace(/[{}]/g, "") : null;
+        var conditions = "<condition attribute='statecode' operator='eq' value='0' />";
+        if (id) {
+            conditions = "<condition attribute='ahb_client' operator='eq' value='" + id + "' />" + conditions;
+        }
+        roi.addCustomFilter("<filter type='and'>" + conditions + "</filter>", "ahb_releaseofinformation");
+    });
+}
+
+
+
+// code block separator
+
+
+
+/**
+ * Consent form (2026-09-08). Staff have always picked the ROI first and let it carry the
+ * client, so the client box would sit empty and the ROI filter above would have nothing to
+ * work with. When an ROI is chosen and the client is still blank, copy the ROI's client
+ * onto the consent. Never overwrites a client already set - if the two disagree that is a
+ * mistake worth seeing, not one to paper over. Wire on the ahb_roi field's OnChange with
+ * "pass execution context" ticked.
+ */
+function setClientFromRoi(executionContext) {
+    var formContext = executionContext.getFormContext();
+    var roiAttr = formContext.getAttribute("ahb_roi");
+    var clientAttr = formContext.getAttribute("ahb_client");
+    if (!roiAttr || !clientAttr) { return; }
+    if (clientAttr.getValue()) { return; }
+    var roi = roiAttr.getValue();
+    if (!roi || !roi.length) { return; }
+    var roiId = roi[0].id.replace(/[{}]/g, "");
+    Xrm.WebApi.retrieveRecord("ahb_releaseofinformation", roiId, "?$select=_ahb_client_value").then(
+        function (r) {
+            var id = r["_ahb_client_value"];
+            if (!id || clientAttr.getValue()) { return; }
+            clientAttr.setValue([{
+                id: id,
+                name: r["_ahb_client_value@OData.Community.Display.V1.FormattedValue"],
+                entityType: "contact"
+            }]);
+        },
+        function (e) { console.error("setClientFromRoi: " + e.message); }
+    );
+}
+
+
+
+// code block separator
+
+
+
 var ReferralForm = ReferralForm || {};
 
 ReferralForm.handleConsistentIncomeChange = function(executionContext) {
