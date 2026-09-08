@@ -908,9 +908,12 @@ function togglePopaNotice(executionContext) {
 }
 
 /**
- * POPA notice (2026-09-03). When "POPA notice read" flips to Yes, stamp the moment and
- * the text: POPA notice given = now (blank only - never overwrites a date already
- * entered) and Notice version given = the current POPA notice option (blank only).
+ * POPA notice (2026-09-03, amended 2026-09-08). When "POPA notice read" flips to Yes,
+ * stamp the moment and the text: POPA notice given = now (blank only - never overwrites
+ * a date already entered). The VERSION follows the date (Adam's ruling 2026-09-08): if
+ * this run stamped the date, the version becomes the current notice even when it already
+ * read "FOIP-era" - the date records when THIS text was read, so the version must say
+ * which text. If the date was already filled the version is only filled when blank.
  * No form-type check: existing clients being caught up need the stamp too. Wire on
  * ahc_popanoticeread OnChange with "pass execution context" ticked; works on the main
  * form, the quick create and the embedded client form. ahc_popanoticedate is
@@ -923,9 +926,10 @@ function stampPopaNotice(executionContext) {
     var readAttr = formContext.getAttribute("ahc_popanoticeread");
     if (!readAttr || readAttr.getValue() !== true) { return; }
     var dateAttr = formContext.getAttribute("ahc_popanoticedate");
-    if (dateAttr && !dateAttr.getValue()) { dateAttr.setValue(new Date()); }
     var versionAttr = formContext.getAttribute("ahc_popanoticeversion");
-    if (versionAttr && versionAttr.getValue() === null) { versionAttr.setValue(POPA_NOTICE_CURRENT_VERSION); }
+    var stampedNow = false;
+    if (dateAttr && !dateAttr.getValue()) { dateAttr.setValue(new Date()); stampedNow = true; }
+    if (versionAttr && (stampedNow || versionAttr.getValue() === null)) { versionAttr.setValue(POPA_NOTICE_CURRENT_VERSION); }
 }
 
 /**
