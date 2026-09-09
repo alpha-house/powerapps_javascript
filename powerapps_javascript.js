@@ -404,6 +404,49 @@ function setClientFromRoi(executionContext) {
 
 
 
+/**
+ * Consent form (2026-09-09). Guard against a consent being attached to the wrong person.
+ * The lookup's related-records filter scopes the ROI SEARCH to the consent's client, but it
+ * does not reach the "Recent Release of Information" flyout, which offers whatever the user
+ * opened last - so a wrong ROI is still one click away, and nothing on screen contradicts it.
+ * This checks after the fact: if the chosen ROI belongs to someone else, clear it and say so
+ * on the field. Pairs with setClientFromRoi, which covers the opposite case (client blank).
+ * Wire on the ahb_roi field's OnChange with "pass execution context" ticked, alongside it.
+ */
+function validateRoiClient(executionContext) {
+    var formContext = executionContext.getFormContext();
+    var roiAttr = formContext.getAttribute("ahb_roi");
+    var clientAttr = formContext.getAttribute("ahb_client");
+    var roiControl = formContext.getControl("ahb_roi");
+    if (!roiAttr || !clientAttr || !roiControl) { return; }
+    if (roiControl.clearNotification) { roiControl.clearNotification("roi_client_mismatch"); }
+    var roi = roiAttr.getValue();
+    var client = clientAttr.getValue();
+    if (!roi || !roi.length || !client || !client.length) { return; }
+    var clientId = client[0].id.replace(/[{}]/g, "").toLowerCase();
+    var clientName = client[0].name;
+    Xrm.WebApi.retrieveRecord("ahb_releaseofinformation", roi[0].id.replace(/[{}]/g, ""),
+                              "?$select=_ahb_client_value").then(
+        function (r) {
+            var roiClientId = (r["_ahb_client_value"] || "").toLowerCase();
+            if (!roiClientId || roiClientId === clientId) { return; }
+            var roiClientName = r["_ahb_client_value@OData.Community.Display.V1.FormattedValue"] || "another client";
+            roiAttr.setValue(null);
+            roiControl.setNotification(
+                "That ROI belongs to " + roiClientName + ", not " + clientName +
+                ". Pick an ROI for this client, or change the Client field first.",
+                "roi_client_mismatch");
+        },
+        function (e) { console.error("validateRoiClient: " + e.message); }
+    );
+}
+
+
+
+// code block separator
+
+
+
 var ReferralForm = ReferralForm || {};
 
 ReferralForm.handleConsistentIncomeChange = function(executionContext) {
