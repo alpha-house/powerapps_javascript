@@ -368,31 +368,38 @@ function filterRoiByClient(executionContext) {
 
 
 /**
- * Consent form (2026-09-08). Staff have always picked the ROI first and let it carry the
- * client, so the client box would sit empty and the ROI filter above would have nothing to
- * work with. When an ROI is chosen and the client is still blank, copy the ROI's client
- * onto the consent. Never overwrites a client already set - if the two disagree that is a
- * mistake worth seeing, not one to paper over. Wire on the ahb_roi field's OnChange with
- * "pass execution context" ticked.
+ * Consent form (2026-08-09 revised 2026-09-09). The client is not really chosen on a
+ * consent - it is inherited from the ROI. So the Client field is READ-ONLY on the form and
+ * this mirrors the ROI's client onto it: pick an ROI, and Client shows whose it is, which
+ * makes a wrong ROI visible at once.
+ *
+ * It MIRRORS, it does not merely fill a blank. With the field read-only, a worker who
+ * changes the ROI to a different person's would otherwise be left with the previous client
+ * sitting there, wrong and uneditable. Clearing the ROI clears the client with it.
+ *
+ * Wire on the ahb_roi field's OnChange with "pass execution context" ticked. Because the
+ * Client field is read-only and derived, the ROI lookup cannot be filtered by it - the box
+ * lists every ACTIVE ROI (the lookup view handles that half). validateRoiClient is
+ * redundant under this design and need not be wired.
  */
 function setClientFromRoi(executionContext) {
     var formContext = executionContext.getFormContext();
     var roiAttr = formContext.getAttribute("ahb_roi");
     var clientAttr = formContext.getAttribute("ahb_client");
     if (!roiAttr || !clientAttr) { return; }
-    if (clientAttr.getValue()) { return; }
     var roi = roiAttr.getValue();
-    if (!roi || !roi.length) { return; }
+    if (!roi || !roi.length) { clientAttr.setValue(null); return; }
     var roiId = roi[0].id.replace(/[{}]/g, "");
     Xrm.WebApi.retrieveRecord("ahb_releaseofinformation", roiId, "?$select=_ahb_client_value").then(
         function (r) {
+            var still = roiAttr.getValue();
+            if (!still || !still.length || still[0].id.replace(/[{}]/g, "") !== roiId) { return; }
             var id = r["_ahb_client_value"];
-            if (!id || clientAttr.getValue()) { return; }
-            clientAttr.setValue([{
+            clientAttr.setValue(id ? [{
                 id: id,
                 name: r["_ahb_client_value@OData.Community.Display.V1.FormattedValue"],
                 entityType: "contact"
-            }]);
+            }] : null);
         },
         function (e) { console.error("setClientFromRoi: " + e.message); }
     );
